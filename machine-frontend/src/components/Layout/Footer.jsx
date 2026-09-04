@@ -11,6 +11,8 @@ import {
   FiSend
 } from 'react-icons/fi'
 import toast from 'react-hot-toast'
+// ✅ Import the logo image - using absolute path
+import machineLogo from '/src/images/logo_footer1.png'
 
 const Footer = () => {
   const [email, setEmail] = useState('')
@@ -64,29 +66,44 @@ const Footer = () => {
   ]
 
   return (
-    <footer className="bg-gray-900 text-gray-300">
-      {/* Main Footer */}
+    <footer className="bg-gray-900 text-gray-300 pt-12">
+      {/* Main Footer - EXTRA LARGE padding top */}
       <div className="container-custom py-12">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
-          {/* Company Info */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-10">
+          {/* Company Info - Updated with Logo - LARGER SIZE */}
           <div>
-            <h3 className="text-white font-bold text-xl mb-4">MachineParts</h3>
+            <Link to="/" className="inline-block mb-4">
+              <img 
+                src={machineLogo} 
+                alt="SAINATH IMPEX" 
+                className="h-24 w-auto object-contain"
+                onError={(e) => {
+                  e.target.style.display = 'none'
+                  const parent = e.target.parentElement
+                  if (parent) {
+                    parent.innerHTML = `
+                      <h3 class="text-white font-bold text-2xl mb-4">SAINATH IMPEX</h3>
+                    `
+                  }
+                }}
+              />
+            </Link>
             <p className="text-sm leading-relaxed mb-4">
               Your one-stop destination for all sewing machine parts and accessories. 
               Quality products at competitive prices.
             </p>
-            <div className="space-y-2 text-sm">
+            <div className="space-y-3 text-sm">
               <p className="flex items-center gap-2">
-                <FiMapPin className="text-blue-400" />
+                <FiMapPin className="text-blue-400 flex-shrink-0" />
                 <span>123, Industrial Area, Delhi, India</span>
               </p>
               <p className="flex items-center gap-2">
-                <FiPhone className="text-blue-400" />
+                <FiPhone className="text-blue-400 flex-shrink-0" />
                 <span>+91 1234567890</span>
               </p>
               <p className="flex items-center gap-2">
-                <FiMail className="text-blue-400" />
-                <span>info@machineparts.com</span>
+                <FiMail className="text-blue-400 flex-shrink-0" />
+                <span>info@sainathimplex.com</span>
               </p>
             </div>
           </div>
@@ -94,8 +111,8 @@ const Footer = () => {
           {/* Quick Links */}
           {Object.entries(footerLinks).map(([title, links]) => (
             <div key={title}>
-              <h4 className="text-white font-semibold mb-4">{title}</h4>
-              <ul className="space-y-2">
+              <h4 className="text-white font-semibold text-lg mb-4">{title}</h4>
+              <ul className="space-y-3">
                 {links.map((link) => (
                   <li key={link.name}>
                     <Link
@@ -112,7 +129,7 @@ const Footer = () => {
         </div>
 
         {/* Newsletter Section */}
-        <div className="mt-8 pt-8 border-t border-gray-800">
+        <div className="mt-16 pt-12 border-t border-gray-800">
           <div className="flex flex-col md:flex-row items-center justify-between gap-4">
             <div>
               <h4 className="text-white font-semibold text-lg">
@@ -128,12 +145,12 @@ const Footer = () => {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="Enter your email"
-                className="flex-1 md:w-64 px-4 py-2 rounded-lg bg-gray-800 border border-gray-700 focus:outline-none focus:border-blue-500 text-white placeholder-gray-500"
+                className="flex-1 md:w-80 px-4 py-3 rounded-lg bg-gray-800 border border-gray-700 focus:outline-none focus:border-blue-500 text-white placeholder-gray-500"
               />
               <button
                 type="submit"
                 disabled={loading}
-                className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 flex items-center gap-2"
+                className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 flex items-center gap-2"
               >
                 <FiSend size={18} />
                 Subscribe
@@ -143,21 +160,21 @@ const Footer = () => {
         </div>
 
         {/* Social & Payment */}
-        <div className="mt-8 pt-8 border-t border-gray-800 flex flex-col sm:flex-row items-center justify-between gap-4">
+        <div className="mt-12 pt-12 border-t border-gray-800 flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-4">
             <span className="text-sm text-gray-400">Follow us:</span>
-            <div className="flex gap-3">
+            <div className="flex gap-4">
               <a href="#" className="text-gray-400 hover:text-blue-400 transition-colors">
-                <FiFacebook size={20} />
+                <FiFacebook size={22} />
               </a>
               <a href="#" className="text-gray-400 hover:text-blue-400 transition-colors">
-                <FiTwitter size={20} />
+                <FiTwitter size={22} />
               </a>
               <a href="#" className="text-gray-400 hover:text-pink-400 transition-colors">
-                <FiInstagram size={20} />
+                <FiInstagram size={22} />
               </a>
               <a href="#" className="text-gray-400 hover:text-red-400 transition-colors">
-                <FiYoutube size={20} />
+                <FiYoutube size={22} />
               </a>
             </div>
           </div>
@@ -167,7 +184,7 @@ const Footer = () => {
               {paymentMethods.map((method, index) => (
                 <span
                   key={index}
-                  className="px-3 py-1 bg-gray-800 rounded text-sm text-white"
+                  className="px-3 py-1.5 bg-gray-800 rounded text-sm text-white"
                   title={method.name}
                 >
                   {method.icon}
@@ -178,8 +195,8 @@ const Footer = () => {
         </div>
 
         {/* Copyright */}
-        <div className="mt-8 pt-8 border-t border-gray-800 text-center text-sm text-gray-500">
-          <p>© {new Date().getFullYear()} MachineParts. All rights reserved.</p>
+        <div className="mt-12 pt-12 border-t border-gray-800 text-center text-sm text-gray-500">
+          <p>© {new Date().getFullYear()} SAINATH IMPEX. All rights reserved.</p>
         </div>
       </div>
     </footer>

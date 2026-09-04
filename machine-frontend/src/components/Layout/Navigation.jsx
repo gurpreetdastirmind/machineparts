@@ -7,6 +7,9 @@ const Navigation = () => {
 
   const menuItems = [
     { name: 'Home', path: '/' },
+    { name: 'Shop', path: '/products' },
+    { name: 'About Us', path: '/about' },
+    { name: 'Contact Us', path: '/contact' },
     {
       name: 'Sewing Parts',
       path: '/products?category=sewing-parts',
@@ -60,7 +63,7 @@ const Navigation = () => {
           {menuItems.map((item, index) => (
             <li
               key={index}
-              className={index === 1 ? "" : "relative"}
+              className={item.subcategories ? "" : "relative"}
               onMouseEnter={() => setActiveMenu(index)}
               onMouseLeave={() => setActiveMenu(null)}
             >
@@ -69,86 +72,49 @@ const Navigation = () => {
                 className="block px-4 py-3 text-sm font-medium text-gray-700 hover:text-blue-600 transition-colors"
               >
                 {item.name}
-                {index > 0 && (
+                {item.subcategories && (
                   <FiChevronDown className="inline ml-1 text-xs" />
                 )}
               </Link>
 
-              {index > 0 && activeMenu === index && (
-                <>
-                  {/* Sewing Parts: Full-Width Mega Menu */}
-                  {index === 1 ? (
-                    <div className="absolute left-0 top-full w-full bg-white shadow-xl border-t border-gray-200 py-6 z-50">
-                      <div className="container-custom">
-                        <div className="grid grid-cols-4 gap-6">
-                          {brandCategories.map((category) => (
-                            <div key={category.id} className="space-y-2">
-                              <h4 className="font-semibold text-gray-800 text-sm uppercase hover:text-blue-600">
-                                <Link to={`/products?category=${category.slug}`}>
-                                  {category.name} ({category.count})
-                                </Link>
-                              </h4>
-                              <ul className="space-y-1">
-                                {category.subcategories.slice(0, 6).map((sub, idx) => (
-                                  <li key={idx}>
-                                    <Link
-                                      to={`/products?category=${category.slug}&sub=${sub.toLowerCase().replace(/ /g, '-')}`}
-                                      className="text-sm text-gray-600 hover:text-blue-600 block py-0.5"
-                                    >
-                                      {sub}
-                                    </Link>
-                                  </li>
-                                ))}
-                                {category.subcategories.length > 6 && (
-                                  <li>
-                                    <Link
-                                      to={`/products?category=${category.slug}`}
-                                      className="text-sm text-blue-600 hover:underline font-medium"
-                                    >
-                                      View All <FiChevronRight className="inline" />
-                                    </Link>
-                                  </li>
-                                )}
-                              </ul>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-                  ) : (
-                    /* Standard Dropdown: Vertical List directly under item */
-                    <div className="absolute left-0 top-full w-64 bg-white shadow-lg border border-gray-200 rounded-b-md py-2 z-50">
-                      <ul className="flex flex-col">
-                        {item.subcategories && item.subcategories.map((sub, idx) => (
-                          <li key={idx} className="relative group/sub">
-                            <Link
-                              to={`/products?category=${sub.slug}`}
-                              className="flex items-center justify-between px-4 py-2 text-xs text-gray-700 hover:bg-lime-400 hover:text-black transition-colors font-medium"
-                            >
-                              <span>{sub.name}</span>
-                              {sub.items && <FiChevronRight className="text-xs ml-2 flex-shrink-0" />}
+              {item.subcategories && activeMenu === index && (
+                <div className="absolute left-0 top-full w-full bg-white shadow-xl border-t border-gray-200 py-6 z-50">
+                  <div className="container-custom">
+                    <div className="grid grid-cols-4 gap-6">
+                      {brandCategories.map((category) => (
+                        <div key={category.id} className="space-y-2">
+                          <h4 className="font-semibold text-gray-800 text-sm uppercase hover:text-blue-600">
+                            <Link to={`/products?category=${category.slug}`}>
+                              {category.name} ({category.count})
                             </Link>
-
-                            {/* Level 2 Submenu (Flyout) */}
-                            {sub.items && (
-                              <div className="hidden group-hover/sub:block absolute left-full top-0 w-48 bg-white shadow-lg border border-gray-200 py-2 z-50">
-                                {sub.items.map((nestedItem, nIdx) => (
-                                  <Link
-                                    key={nIdx}
-                                    to={`/products?category=${nestedItem.slug}`}
-                                    className="block px-4 py-2 text-xs text-gray-700 hover:bg-lime-400 hover:text-black transition-colors"
-                                  >
-                                    {nestedItem.name}
-                                  </Link>
-                                ))}
-                              </div>
+                          </h4>
+                          <ul className="space-y-1">
+                            {category.subcategories.slice(0, 6).map((sub, idx) => (
+                              <li key={idx}>
+                                <Link
+                                  to={`/products?category=${category.slug}&sub=${sub.toLowerCase().replace(/ /g, '-')}`}
+                                  className="text-sm text-gray-600 hover:text-blue-600 block py-0.5"
+                                >
+                                  {sub}
+                                </Link>
+                              </li>
+                            ))}
+                            {category.subcategories.length > 6 && (
+                              <li>
+                                <Link
+                                  to={`/products?category=${category.slug}`}
+                                  className="text-sm text-blue-600 hover:underline font-medium"
+                                >
+                                  View All <FiChevronRight className="inline" />
+                                </Link>
+                              </li>
                             )}
-                          </li>
-                        ))}
-                      </ul>
+                          </ul>
+                        </div>
+                      ))}
                     </div>
-                  )}
-                </>
+                  </div>
+                </div>
               )}
             </li>
           ))}

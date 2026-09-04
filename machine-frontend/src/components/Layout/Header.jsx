@@ -12,6 +12,8 @@ import {
   FiX,
   FiShield
 } from 'react-icons/fi'
+// ✅ Import the logo image
+import machineLogo from '../../images/machine_logo1.png'
 
 const Header = () => {
   const [searchQuery, setSearchQuery] = useState('')
@@ -40,7 +42,6 @@ const Header = () => {
   // ✅ Final check - ALL must be true for admin UI
   const showAdminUI = isAuth && isAdminUser && isAdminLogin && isAdminToken && hasAdminRole
 
-  // Log for debugging
   console.log('🔍 Header render:', { 
     isAuthenticated: isAuth,
     isAdmin: isAdminUser,
@@ -49,13 +50,6 @@ const Header = () => {
     userEmail: user?.email,
     userRole: user?.role,
     showAdminUI,
-    conditions: {
-      auth: isAuth,
-      adminState: isAdminUser,
-      loginTypeCheck: isAdminLogin,
-      tokenTypeCheck: isAdminToken,
-      roleCheck: hasAdminRole
-    }
   })
 
   const handleSearch = (e) => {
@@ -75,14 +69,25 @@ const Header = () => {
     <header className="bg-white shadow-sm sticky top-0 z-50 w-full">
       <div className="container-custom py-3">
         <div className="flex items-center justify-between gap-4">
-          {/* Logo */}
+          {/* Logo - Updated with machine logo image - LARGER SIZE */}
           <Link to="/" className="flex items-center gap-2 shrink-0">
-            <div className="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center">
-              <span className="text-white font-bold text-xl">MP</span>
-            </div>
-            <span className="text-xl font-bold text-gray-800 hidden sm:block">
-              MachineParts
-            </span>
+            <img 
+              src={machineLogo} 
+              alt="SAINATH IMPEX" 
+              className="h-16 w-auto object-contain"
+              onError={(e) => {
+                e.target.style.display = 'none'
+                const parent = e.target.parentElement
+                if (parent) {
+                  parent.innerHTML = `
+                    <div class="w-16 h-16 bg-blue-600 rounded-lg flex items-center justify-center">
+                      <span class="text-white font-bold text-2xl">SI</span>
+                    </div>
+                    <span class="text-xl font-bold text-gray-800 hidden sm:block">SAINATH IMPEX</span>
+                  `
+                }
+              }}
+            />
           </Link>
 
           {/* Search Bar */}
@@ -93,7 +98,7 @@ const Header = () => {
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search for products..."
-                className="w-full px-4 py-2 pl-12 pr-4 border border-gray-300 rounded-full bg-gray-50 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 text-gray-800"
+                className="w-full px-4 py-2.5 pl-12 pr-4 border border-gray-300 rounded-full bg-gray-50 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 text-gray-800"
               />
               <button
                 type="submit"
@@ -142,7 +147,6 @@ const Header = () => {
                 }}
                 className="p-2 rounded-full hover:bg-gray-100 transition-colors"
               >
-                {/* ✅ Show shield ONLY if admin, otherwise show user icon */}
                 {showAdminUI ? (
                   <FiShield size={22} className="text-blue-600" />
                 ) : (
@@ -150,11 +154,9 @@ const Header = () => {
                 )}
               </button>
 
-              {/* ✅ Only show menu if authenticated */}
               {showAccountMenu && isAuthenticated && (
                 <div className="absolute right-0 mt-2 bg-white rounded-lg shadow-lg border border-gray-200 py-2 min-w-[200px] z-50">
                   {showAdminUI ? (
-                    // Admin dropdown header
                     <div className="px-4 py-3 border-b border-gray-200 bg-gradient-to-r from-blue-50 to-blue-100">
                       <div className="flex items-center gap-2">
                         <FiShield className="text-blue-600" size={18} />
@@ -163,7 +165,6 @@ const Header = () => {
                       <p className="text-xs text-gray-500 mt-0.5">{user?.email}</p>
                     </div>
                   ) : (
-                    // Regular user dropdown header
                     <div className="px-4 py-2 border-b border-gray-200">
                       <p className="font-semibold text-gray-800">
                         {user?.firstName} {user?.lastName}
@@ -172,7 +173,6 @@ const Header = () => {
                     </div>
                   )}
                   
-                  {/* ✅ Only show Admin Panel link if actually admin */}
                   {showAdminUI && (
                     <Link 
                       to="/admin/dashboard" 
