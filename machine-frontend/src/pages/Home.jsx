@@ -388,7 +388,7 @@ const Home = () => {
               <div className="relative z-10 container-custom py-12 md:py-16">
                 <div className="max-w-2xl">
                   <h1 className="text-3xl md:text-5xl font-bold text-white mb-4">
-                    Welcome to MachineParts
+                    Welcome to Sainath Impex 
                   </h1>
                   <p className="text-lg md:text-xl text-white/90 mb-6">
                     Your one-stop shop for all sewing machine parts
@@ -693,7 +693,7 @@ const Home = () => {
                   <span className="bg-gradient-to-r from-yellow-300 to-pink-300 bg-clip-text text-transparent">Sewing Month</span>
                 </h2>
                 <p className="text-white/90 text-sm md:text-base lg:text-lg mb-6 max-w-xl leading-relaxed">
-                  Sew into National Sewing Month with hot deals on SINGER® machines. Shop Last Chance and Final Markdown machines at incredible prices, plus save an extra 10% on refurbished machines.
+                  Sew into National Sewing Month with hot deals on Multible Brands machines. Shop Last Chance and Final Markdown machines at incredible prices, plus save an extra 10% on refurbished machines.
                 </p>
                 <Link
                   to="/products?category=sewing-machines"
@@ -856,10 +856,10 @@ const Home = () => {
 
           <div className="max-w-4xl mx-auto text-center mb-12">
             <p className="text-gray-600 text-sm md:text-base leading-relaxed">
-              For nearly 175 years, the <span className="font-semibold text-blue-600">SINGER®</span> brand has been a leader in sewing innovation,
+              For nearly 20 years, the <span className="font-semibold text-blue-600">SAINATH IMPEX</span>has been a leader in sewing innovation,
               creating reliable <span className="font-semibold">sewing machines</span> and <span className="font-semibold">embroidery machines</span> trusted by makers worldwide.
               From <span className="font-semibold">beginner sewing machines</span> for first-time enthusiasts to advanced and professional sewing
-              and embroidery machines for experienced creators, <span className="font-semibold text-blue-600">SINGER®</span> offers tools for every skill level.
+              and embroidery machines for experienced creators,offers tools for every skill level.
               Explore our extensive selection of sewing machines, embroidery machines, <span className="font-semibold">quilting machines</span> and
               <span className="font-semibold"> sewing accessories</span>, all designed to help bring your creative projects to life with precision
               and confidence.
