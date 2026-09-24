@@ -1,16 +1,96 @@
 // backend/config/database.js
-const sqlite3 = require('sqlite3').verbose();
-const path = require('path');
+const { Pool } = require('pg');
 const bcrypt = require('bcrypt');
 
-const dbPath = path.join(__dirname, '..', 'machineparts.db');
-const db = new sqlite3.Database(dbPath, (err) => {
-  if (err) {
-    console.error('Error opening database:', err.message);
-  } else {
-    console.log(`✅ Connected to SQLite database at ${dbPath}`);
-  }
+// ---------- PostgreSQL Connection ----------
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: process.env.DATABASE_URL?.includes('neon.tech')
+    ? { rejectUnauthorized: false }
+    : false,
 });
+
+pool.on('connect', () => {
+  console.log('✅ Connected to PostgreSQL database');
+});
+
+pool.on('error', (err) => {
+  console.error('PostgreSQL pool error:', err.message);
+});
+
+// ---------- Compatibility wrapper (mimics sqlite3 API) ----------
+// SQLite uses ? placeholders; Postgres uses $1, $2...
+// This converts ? to $1, $2 automatically.
+const convertPlaceholders = (sql) => {
+  let i = 0;
+  return sql.replace(/\?/g, () => `$${++i}`);
+};
+
+const db = {
+  // db.get(sql, params, callback)
+  get: (sql, params, callback) => {
+    if (typeof params === 'function') {
+      callback = params;
+      params = [];
+    }
+    const pgSql = convertPlaceholders(sql);
+    pool.query(pgSql, params || [])
+      .then((res) => callback(null, res.rows[0]))
+      .catch((err) => callback(err));
+  },
+
+  // db.all(sql, params, callback)
+  all: (sql, params, callback) => {
+    if (typeof params === 'function') {
+      callback = params;
+      params = [];
+    }
+    const pgSql = convertPlaceholders(sql);
+    pool.query(pgSql, params || [])
+      .then((res) => callback(null, res.rows))
+      .catch((err) => callback(err));
+  },
+
+  // db.run(sql, params, callback)
+  run: function (sql, params, callback) {
+    if (typeof params === 'function') {
+      callback = params;
+      params = [];
+    }
+
+    // Handle INSERT: append RETURNING id so we can mimic lastID
+    let pgSql = convertPlaceholders(sql);
+    const isInsert = /^\s*INSERT\s+/i.test(sql);
+    if (isInsert && !/RETURNING/i.test(sql)) {
+      pgSql += ' RETURNING id';
+    }
+
+    const ctx = this;
+    pool.query(pgSql, params || [])
+      .then((res) => {
+        ctx.lastID = res.rows[0]?.id || null;
+        ctx.changes = res.rowCount;
+        if (callback) callback.call(ctx, null);
+      })
+      .catch((err) => {
+        if (callback) callback.call(ctx, err);
+      });
+  },
+
+  // db.serialize (no-op for Postgres — used to queue operations in sqlite)
+  serialize: (fn) => {
+    if (fn) fn();
+  },
+
+  // db.prepare — minimal shim
+  prepare: (sql) => ({
+    run: (params, cb) => db.run(sql, params, cb),
+    finalize: () => {},
+  }),
+
+  lastID: null,
+  changes: 0,
+};
 
 // ============================================================
 // HELPER FUNCTIONS
@@ -18,7 +98,7 @@ const db = new sqlite3.Database(dbPath, (err) => {
 
 const findUserByEmail = (email) => {
   return new Promise((resolve, reject) => {
-    db.get('SELECT * FROM users WHERE email = ?', [email], (err, row) => {
+    db.get('SELECT * FROM users WHERE email = $1', [email], (err, row) => {
       if (err) reject(err);
       else resolve(row);
     });
@@ -27,24 +107,21 @@ const findUserByEmail = (email) => {
 
 const findUserById = (id) => {
   return new Promise((resolve, reject) => {
-    db.get('SELECT * FROM users WHERE id = ?', [id], (err, row) => {
+    db.get('SELECT * FROM users WHERE id = $1', [id], (err, row) => {
       if (err) reject(err);
       else resolve(row);
     });
   });
 };
 
-// ✅ findProductById fetches images from product_images table
 const findProductById = (id) => {
   return new Promise((resolve, reject) => {
-    db.get('SELECT * FROM products WHERE id = ?', [id], (err, row) => {
+    db.get('SELECT * FROM products WHERE id = $1', [id], (err, row) => {
       if (err) return reject(err);
-
       if (!row) return resolve(row);
 
-      // Fetch images from product_images table
       db.all(
-        'SELECT imageUrl FROM product_images WHERE productId = ? ORDER BY sortOrder ASC, id ASC',
+        'SELECT "imageUrl" FROM product_images WHERE "productId" = $1 ORDER BY "sortOrder" ASC, id ASC',
         [id],
         (imgErr, imgRows) => {
           if (imgErr) {
@@ -65,7 +142,7 @@ const findProductById = (id) => {
 
 const findCategoryById = (id) => {
   return new Promise((resolve, reject) => {
-    db.get('SELECT * FROM categories WHERE id = ?', [id], (err, row) => {
+    db.get('SELECT * FROM categories WHERE id = $1', [id], (err, row) => {
       if (err) reject(err);
       else resolve(row);
     });
@@ -74,7 +151,7 @@ const findCategoryById = (id) => {
 
 const getCartItems = (userId) => {
   return new Promise((resolve, reject) => {
-    db.all('SELECT * FROM carts WHERE userId = ?', [userId], (err, rows) => {
+    db.all('SELECT * FROM carts WHERE "userId" = $1', [userId], (err, rows) => {
       if (err) reject(err);
       else resolve(rows);
     });
@@ -83,7 +160,7 @@ const getCartItems = (userId) => {
 
 const getOrders = (userId) => {
   return new Promise((resolve, reject) => {
-    db.all('SELECT * FROM orders WHERE userId = ?', [userId], (err, rows) => {
+    db.all('SELECT * FROM orders WHERE "userId" = $1', [userId], (err, rows) => {
       if (err) reject(err);
       else resolve(rows);
     });
@@ -91,8 +168,7 @@ const getOrders = (userId) => {
 };
 
 const hashPassword = async (password) => {
-  const saltRounds = 10;
-  return await bcrypt.hash(password, saltRounds);
+  return await bcrypt.hash(password, 10);
 };
 
 const comparePassword = async (plainPassword, hashedPassword) => {
@@ -100,349 +176,244 @@ const comparePassword = async (plainPassword, hashedPassword) => {
 };
 
 // ============================================================
-// ADD MISSING COLUMNS (migrations)
-// ============================================================
-const addMissingColumns = () => {
-  const columns = [
-    ['isBestSeller', 'INTEGER DEFAULT 0'],
-    ['isNewArrival', 'INTEGER DEFAULT 0'],
-    ['isHotDeal', 'INTEGER DEFAULT 0'],
-    ['isFeatured', 'INTEGER DEFAULT 0'],
-    ['isBundle', 'INTEGER DEFAULT 0'],
-    ['isMostPopular', 'INTEGER DEFAULT 0'],
-    ['specifications', 'TEXT'],
-    ['images', "TEXT DEFAULT '[]'"],
-  ];
-
-  columns.forEach(([name, type]) => {
-    db.run(`ALTER TABLE products ADD COLUMN ${name} ${type}`, (err) => {
-      if (err && !err.message.includes('duplicate column name')) {
-        console.log(`⚠️ ${name} column error:`, err.message);
-      } else if (!err) {
-        console.log(`✅ ${name} column added`);
-      }
-    });
-  });
-
-  db.run(`ALTER TABLE order_items ADD COLUMN imageUrl TEXT`, (err) => {
-    if (err && !err.message.includes('duplicate column name')) {
-      console.log('⚠️ order_items.imageUrl error:', err.message);
-    } else if (!err) {
-      console.log('✅ order_items.imageUrl column added');
-    }
-  });
-};
-
-// ============================================================
-// INITIALIZE TABLES AND SEED DATA
+// TABLE CREATION (Postgres-compatible schema)
 // ============================================================
 const initDB = async () => {
-  db.serialize(() => {
-    // ---------- USERS ----------
-    db.run(`
+  try {
+    // USERS
+    await pool.query(`
       CREATE TABLE IF NOT EXISTS users (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        firstName TEXT,
-        lastName TEXT,
+        id SERIAL PRIMARY KEY,
+        "firstName" TEXT,
+        "lastName" TEXT,
         email TEXT UNIQUE,
         phone TEXT,
         role TEXT DEFAULT 'user',
         password TEXT,
-        resetToken TEXT,
-        resetTokenExpiry INTEGER,
-        createdAt TEXT
+        "resetToken" TEXT,
+        "resetTokenExpiry" BIGINT,
+        "createdAt" TEXT
       )
     `);
 
-    // ---------- CATEGORIES ----------
-    db.run(`
+    // CATEGORIES
+    await pool.query(`
       CREATE TABLE IF NOT EXISTS categories (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        id SERIAL PRIMARY KEY,
         name TEXT,
         slug TEXT,
-        productCount INTEGER DEFAULT 0,
-        createdAt TEXT
+        "productCount" INTEGER DEFAULT 0,
+        "createdAt" TEXT
       )
     `);
 
-    // ---------- PRODUCTS ----------
-    db.run(`
+    // PRODUCTS
+    await pool.query(`
       CREATE TABLE IF NOT EXISTS products (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        id SERIAL PRIMARY KEY,
         name TEXT,
         sku TEXT,
         description TEXT,
         price REAL,
-        discountedPrice REAL,
+        "discountedPrice" REAL,
         stock INTEGER,
         category TEXT,
-        categoryId INTEGER,
+        "categoryId" INTEGER,
         brand TEXT,
-        imageUrl TEXT,
+        "imageUrl" TEXT,
         images TEXT DEFAULT '[]',
         specifications TEXT,
         rating REAL DEFAULT 0,
-        reviewCount INTEGER DEFAULT 0,
-        isBestSeller INTEGER DEFAULT 0,
-        isNewArrival INTEGER DEFAULT 0,
-        isHotDeal INTEGER DEFAULT 0,
-        isFeatured INTEGER DEFAULT 0,
-        isBundle INTEGER DEFAULT 0,
-        isMostPopular INTEGER DEFAULT 0,
-        createdAt TEXT,
-        updatedAt TEXT
+        "reviewCount" INTEGER DEFAULT 0,
+        "isBestSeller" INTEGER DEFAULT 0,
+        "isNewArrival" INTEGER DEFAULT 0,
+        "isHotDeal" INTEGER DEFAULT 0,
+        "isFeatured" INTEGER DEFAULT 0,
+        "isBundle" INTEGER DEFAULT 0,
+        "isMostPopular" INTEGER DEFAULT 0,
+        "createdAt" TEXT,
+        "updatedAt" TEXT
       )
     `);
 
-    // ---------- PRODUCT IMAGES (NEW) ----------
-    db.run(
-      `
+    // PRODUCT IMAGES
+    await pool.query(`
       CREATE TABLE IF NOT EXISTS product_images (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        productId INTEGER NOT NULL,
-        imageUrl TEXT NOT NULL,
-        sortOrder INTEGER DEFAULT 0,
-        createdAt TEXT,
-        FOREIGN KEY (productId) REFERENCES products(id) ON DELETE CASCADE
+        id SERIAL PRIMARY KEY,
+        "productId" INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+        "imageUrl" TEXT NOT NULL,
+        "sortOrder" INTEGER DEFAULT 0,
+        "createdAt" TEXT
       )
-    `,
-      (err) => {
-        if (err) console.error('Error creating product_images table:', err);
-        else console.log('✅ product_images table ready');
-      }
-    );
+    `);
 
-    // ---------- CARTS ----------
-    db.run(`
+    // CARTS
+    await pool.query(`
       CREATE TABLE IF NOT EXISTS carts (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        userId INTEGER,
-        productId INTEGER,
+        id SERIAL PRIMARY KEY,
+        "userId" INTEGER,
+        "productId" INTEGER,
         quantity INTEGER,
         price REAL,
-        createdAt TEXT,
-        updatedAt TEXT
+        "createdAt" TEXT,
+        "updatedAt" TEXT
       )
     `);
 
-    // ---------- ORDERS ----------
-    db.run(`
+    // ORDERS
+    await pool.query(`
       CREATE TABLE IF NOT EXISTS orders (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        userId INTEGER,
-        orderNumber TEXT,
-        totalAmount REAL,
+        id SERIAL PRIMARY KEY,
+        "userId" INTEGER,
+        "orderNumber" TEXT,
+        "totalAmount" REAL,
         status TEXT DEFAULT 'Pending',
-        paymentMethod TEXT,
-        shippingAddress TEXT,
-        createdAt TEXT,
-        updatedAt TEXT
+        "paymentMethod" TEXT,
+        "shippingAddress" TEXT,
+        "createdAt" TEXT,
+        "updatedAt" TEXT
       )
     `);
 
-    // ---------- ORDER ITEMS ----------
-    db.run(
-      `
+    // ORDER ITEMS
+    await pool.query(`
       CREATE TABLE IF NOT EXISTS order_items (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        orderId INTEGER,
-        productId INTEGER,
-        productName TEXT,
+        id SERIAL PRIMARY KEY,
+        "orderId" INTEGER REFERENCES orders(id),
+        "productId" INTEGER,
+        "productName" TEXT,
         quantity INTEGER,
         price REAL,
         total REAL,
-        imageUrl TEXT,
-        createdAt TEXT,
-        FOREIGN KEY (orderId) REFERENCES orders(id)
+        "imageUrl" TEXT,
+        "createdAt" TEXT
       )
-    `,
-      (err) => {
-        if (err) console.error('Error creating order_items table:', err);
-        else console.log('✅ order_items table ready');
-      }
-    );
+    `);
 
-    // ---------- REVIEWS ----------
-    db.run(
-      `
+    // REVIEWS
+    await pool.query(`
       CREATE TABLE IF NOT EXISTS reviews (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        productId INTEGER,
-        userId INTEGER,
-        userName TEXT,
+        id SERIAL PRIMARY KEY,
+        "productId" INTEGER REFERENCES products(id),
+        "userId" INTEGER REFERENCES users(id),
+        "userName" TEXT,
         rating INTEGER,
         title TEXT,
         comment TEXT,
-        helpfulCount INTEGER DEFAULT 0,
-        createdAt TEXT,
-        FOREIGN KEY (productId) REFERENCES products(id),
-        FOREIGN KEY (userId) REFERENCES users(id)
+        "helpfulCount" INTEGER DEFAULT 0,
+        "createdAt" TEXT
       )
-    `,
-      (err) => {
-        if (err) console.error('Error creating reviews table:', err);
-        else console.log('✅ reviews table ready');
-      }
-    );
+    `);
 
-    // ---------- COUPONS ----------
-    db.run(
-      `
+    // COUPONS
+    await pool.query(`
       CREATE TABLE IF NOT EXISTS coupons (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        id SERIAL PRIMARY KEY,
         code TEXT UNIQUE NOT NULL,
         description TEXT,
-        discountType TEXT DEFAULT 'percentage',
-        discountValue REAL DEFAULT 0,
-        minOrderAmount REAL DEFAULT 0,
-        maxDiscount REAL DEFAULT 0,
-        usageLimit INTEGER DEFAULT 0,
-        usedCount INTEGER DEFAULT 0,
-        validFrom TEXT,
-        validUntil TEXT,
-        isActive INTEGER DEFAULT 1,
-        showOnHome INTEGER DEFAULT 0,
-        createdAt TEXT,
-        updatedAt TEXT
+        "discountType" TEXT DEFAULT 'percentage',
+        "discountValue" REAL DEFAULT 0,
+        "minOrderAmount" REAL DEFAULT 0,
+        "maxDiscount" REAL DEFAULT 0,
+        "usageLimit" INTEGER DEFAULT 0,
+        "usedCount" INTEGER DEFAULT 0,
+        "validFrom" TEXT,
+        "validUntil" TEXT,
+        "isActive" INTEGER DEFAULT 1,
+        "showOnHome" INTEGER DEFAULT 0,
+        "createdAt" TEXT,
+        "updatedAt" TEXT
       )
-    `,
-      (err) => {
-        if (err) console.error('Error creating coupons table:', err);
-        else console.log('✅ coupons table ready');
-      }
-    );
+    `);
 
-    // ---------- COUPON USAGE ----------
-    db.run(
-      `
+    // COUPON USAGE
+    await pool.query(`
       CREATE TABLE IF NOT EXISTS coupon_usage (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        couponId INTEGER NOT NULL,
-        userId INTEGER NOT NULL,
-        orderId INTEGER,
+        id SERIAL PRIMARY KEY,
+        "couponId" INTEGER NOT NULL REFERENCES coupons(id),
+        "userId" INTEGER NOT NULL REFERENCES users(id),
+        "orderId" INTEGER,
         code TEXT,
-        usedAt TEXT,
-        FOREIGN KEY (couponId) REFERENCES coupons(id),
-        FOREIGN KEY (userId) REFERENCES users(id),
-        UNIQUE(couponId, userId)
+        "usedAt" TEXT,
+        UNIQUE("couponId", "userId")
       )
-    `,
-      (err) => {
-        if (err) console.error('Error creating coupon_usage table:', err);
-        else console.log('✅ coupon_usage table ready');
-      }
-    );
+    `);
 
-    // ---------- ADD MISSING COLUMNS ----------
-    console.log('🔍 Checking for missing columns...');
-    addMissingColumns();
+    // ---------- SEED ADMIN ----------
+    const adminCheck = await pool.query('SELECT * FROM users WHERE email = $1', ['admin@example.com']);
+    const hashedPassword = await hashPassword('admin123');
 
-    // ============================================================
-    // SEED ADMIN USER
-    // ============================================================
-    db.get('SELECT * FROM users WHERE email = ?', ['admin@example.com'], async (err, row) => {
-      if (err) {
-        console.error('Error checking admin user:', err.message);
-        return;
-      }
+    if (adminCheck.rows.length === 0) {
+      await pool.query(
+        `INSERT INTO users ("firstName", "lastName", email, phone, role, password, "createdAt")
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        ['Admin', 'User', 'admin@example.com', '9876543211', 'admin', hashedPassword, new Date().toISOString()]
+      );
+      console.log('✅ Admin user created');
+    } else {
+      await pool.query('UPDATE users SET password = $1 WHERE email = $2', [hashedPassword, 'admin@example.com']);
+      console.log('✅ Admin password updated');
+    }
 
-      const hashedPassword = await hashPassword('admin123');
-
-      if (!row) {
-        db.run(
-          `INSERT INTO users (firstName, lastName, email, phone, role, password, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-          ['Admin', 'User', 'admin@example.com', '9876543211', 'admin', hashedPassword, new Date().toISOString()],
-          (err) => {
-            if (err) console.error('Error seeding admin:', err.message);
-            else console.log('✅ Admin user created with hashed password');
-          }
+    // ---------- SEED CATEGORIES ----------
+    const catCheck = await pool.query('SELECT COUNT(*) as count FROM categories');
+    if (parseInt(catCheck.rows[0].count) === 0) {
+      const cats = [
+        ['Sewing Parts', 'sewing-parts'],
+        ['Cutting', 'cutting'],
+        ['Fusing', 'fusing'],
+        ['Steam Iron', 'steam-iron'],
+        ['Household', 'household'],
+        ['Needles', 'needles'],
+      ];
+      for (const [name, slug] of cats) {
+        await pool.query(
+          `INSERT INTO categories (name, slug, "productCount", "createdAt") VALUES ($1, $2, 0, $3)`,
+          [name, slug, new Date().toISOString()]
         );
-      } else {
-        db.run('UPDATE users SET password = ? WHERE email = ?', [hashedPassword, 'admin@example.com'], (err) => {
-          if (err) console.error('Error updating admin password:', err.message);
-          else console.log('✅ Admin password updated with bcrypt');
-        });
       }
-    });
+      console.log('✅ Categories seeded');
+    }
 
-    // ============================================================
-    // SEED CATEGORIES
-    // ============================================================
-    db.get('SELECT COUNT(*) as count FROM categories', (err, row) => {
-      if (row && row.count === 0) {
-        const cats = [
-          ['Sewing Parts', 'sewing-parts'],
-          ['Cutting', 'cutting'],
-          ['Fusing', 'fusing'],
-          ['Steam Iron', 'steam-iron'],
-          ['Household', 'household'],
-          ['Needles', 'needles'],
-        ];
-        cats.forEach((cat) => {
-          db.run(
-            `INSERT INTO categories (name, slug, productCount, createdAt) VALUES (?, ?, 0, ?)`,
-            [cat[0], cat[1], new Date().toISOString()]
-          );
-        });
-        console.log('✅ Categories seeded');
-      }
-    });
-
-    // ============================================================
-    // SEED COUPONS
-    // ============================================================
-    db.get('SELECT COUNT(*) as count FROM coupons', (err, row) => {
-      if (err) {
-        console.error('Error checking coupons:', err.message);
-        return;
-      }
-
-      if (row && row.count === 0) {
-        const coupons = [
-          ['WELCOME10', 'Get 10% off on your first order', 'percentage', 10, 500, 200, 100, 1, 1],
-          ['SAVE20', 'Save 20% on orders above ₹1000', 'percentage', 20, 1000, 500, 50, 1, 1],
-          ['FLAT100', 'Flat ₹100 off on orders above ₹500', 'fixed', 100, 500, 0, 200, 1, 1],
-          ['MEGA50', 'Mega Sale - 50% off!', 'percentage', 50, 2000, 1000, 20, 1, 1],
-          ['FIRSTBUY', 'Special discount for new customers', 'percentage', 15, 300, 300, 500, 1, 1],
-          ['FESTIVE25', 'Festive season special offer', 'percentage', 25, 1500, 750, 100, 1, 1],
-        ];
-
-        coupons.forEach(
-          ([code, description, discountType, discountValue, minOrderAmount, maxDiscount, usageLimit, isActive, showOnHome]) => {
-            db.run(
-              `INSERT INTO coupons (code, description, discountType, discountValue, minOrderAmount, maxDiscount, usageLimit, usedCount, validFrom, validUntil, isActive, showOnHome, createdAt, updatedAt)
-               VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?)`,
-              [
-                code,
-                description,
-                discountType,
-                discountValue,
-                minOrderAmount,
-                maxDiscount,
-                usageLimit,
-                new Date().toISOString(),
-                new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString(),
-                isActive,
-                showOnHome,
-                new Date().toISOString(),
-                new Date().toISOString(),
-              ],
-              (err) => {
-                if (err) console.error('Error seeding coupon:', err.message);
-              }
-            );
-          }
+    // ---------- SEED COUPONS ----------
+    const couponCheck = await pool.query('SELECT COUNT(*) as count FROM coupons');
+    if (parseInt(couponCheck.rows[0].count) === 0) {
+      const coupons = [
+        ['WELCOME10', 'Get 10% off on your first order', 'percentage', 10, 500, 200, 100, 1, 1],
+        ['SAVE20', 'Save 20% on orders above ₹1000', 'percentage', 20, 1000, 500, 50, 1, 1],
+        ['FLAT100', 'Flat ₹100 off on orders above ₹500', 'fixed', 100, 500, 0, 200, 1, 1],
+        ['MEGA50', 'Mega Sale - 50% off!', 'percentage', 50, 2000, 1000, 20, 1, 1],
+        ['FIRSTBUY', 'Special discount for new customers', 'percentage', 15, 300, 300, 500, 1, 1],
+        ['FESTIVE25', 'Festive season special offer', 'percentage', 25, 1500, 750, 100, 1, 1],
+      ];
+      for (const c of coupons) {
+        await pool.query(
+          `INSERT INTO coupons (code, description, "discountType", "discountValue", "minOrderAmount", "maxDiscount", "usageLimit", "usedCount", "validFrom", "validUntil", "isActive", "showOnHome", "createdAt", "updatedAt")
+           VALUES ($1,$2,$3,$4,$5,$6,$7,0,$8,$9,$10,$11,$12,$13)`,
+          [
+            c[0], c[1], c[2], c[3], c[4], c[5], c[6],
+            new Date().toISOString(),
+            new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString(),
+            c[7], c[8],
+            new Date().toISOString(),
+            new Date().toISOString(),
+          ]
         );
-        console.log('✅ Coupons seeded');
       }
-    });
-  });
+      console.log('✅ Coupons seeded');
+    }
+
+    console.log('✅ Database initialized');
+  } catch (err) {
+    console.error('❌ DB init error:', err.message);
+  }
 };
 
 initDB();
 
 module.exports = {
   db,
+  pool,
   findUserByEmail,
   findUserById,
   findProductById,

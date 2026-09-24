@@ -16,6 +16,7 @@
     "helmet": "^7.1.0",
     "jsonwebtoken": "^9.0.2",
     "nodemailer": "^10.0.3",
+    "pg": "^8.23.0",
     "sqlite": "^5.1.1",
     "sqlite3": "^6.0.1"
   },
