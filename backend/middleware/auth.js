@@ -18,7 +18,6 @@ const auth = (req, res, next) => {
 
     const decoded = jwt.verify(token, JWT_SECRET);
     
-    // Store both userId and role from token
     req.userId = decoded.userId;
     req.userRole = decoded.role || 'user';
     req.tokenType = decoded.type || 'user';
@@ -46,7 +45,7 @@ const auth = (req, res, next) => {
   }
 };
 
-// Admin authentication middleware - FIXED with token validation
+// Admin authentication middleware
 const adminAuth = async (req, res, next) => {
   try {
     const token = req.headers.authorization?.split(' ')[1];
@@ -60,7 +59,6 @@ const adminAuth = async (req, res, next) => {
 
     const decoded = jwt.verify(token, JWT_SECRET);
     
-    // ✅ CRITICAL: Check if token has admin role
     if (decoded.role !== 'admin' && decoded.type !== 'admin') {
       return res.status(403).json({
         success: false,
@@ -72,7 +70,6 @@ const adminAuth = async (req, res, next) => {
     req.userId = decoded.userId;
     req.userRole = decoded.role || 'admin';
     
-    // Additional verification - check database
     const user = await findUserById(req.userId);
     
     if (!user) {
@@ -112,4 +109,21 @@ const adminAuth = async (req, res, next) => {
   }
 };
 
-module.exports = { auth, adminAuth };
+// ✅ NEW: Optional auth — attaches req.userId if a token is present, but never blocks
+const optionalAuth = (req, res, next) => {
+  try {
+    const token = req.headers.authorization?.split(' ')[1];
+    if (!token) {
+      return next();
+    }
+    const decoded = jwt.verify(token, JWT_SECRET);
+    req.userId = decoded.userId;
+    req.userRole = decoded.role || 'user';
+    req.tokenType = decoded.type || 'user';
+  } catch (error) {
+    console.log('optionalAuth: invalid token, treating as guest', error.message);
+  }
+  next();
+};
+
+module.exports = { auth, adminAuth, optionalAuth };

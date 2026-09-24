@@ -39,5 +39,8 @@ export const userService = {
 
   deleteReview: (reviewId) => {
     return api.delete(`/user/reviews/${reviewId}`)
+  },
+    getAllUsers: () => {
+    return api.get('/admin/users')
   }
 }

@@ -30,7 +30,10 @@ const AdminLogin = () => {
       console.log('Admin login result:', result)
       
       if (result.success && result.isAdmin) {
-        navigate('/admin/dashboard')
+        // ✅ Use setTimeout to ensure state is updated before navigation
+        setTimeout(() => {
+          navigate('/admin/dashboard')
+        }, 100)
       } else {
         setError(result.error || 'Login failed. Please check your credentials.')
         toast.error(result.error || 'Login failed')

@@ -1,9 +1,11 @@
 import React, { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'  // ✅ ADD
 import { useAuth } from '../context/AuthContext'
 import { FiEye, FiEyeOff, FiMail, FiLock, FiUser, FiPhone } from 'react-icons/fi'
 
 const Register = () => {
+  const { t } = useTranslation()  // ✅ ADD HOOK
   const [formData, setFormData] = useState({
     firstName: '',
     lastName: '',
@@ -23,17 +25,17 @@ const Register = () => {
 
   const validate = () => {
     const errors = {}
-    if (!formData.firstName) errors.firstName = 'First name is required'
-    if (!formData.lastName) errors.lastName = 'Last name is required'
-    if (!formData.email) errors.email = 'Email is required'
-    else if (!/\S+@\S+\.\S+/.test(formData.email)) errors.email = 'Email is invalid'
-    if (!formData.phone) errors.phone = 'Phone number is required'
-    else if (!/^\d{10}$/.test(formData.phone.replace(/\D/g, ''))) errors.phone = 'Invalid phone number'
-    if (!formData.password) errors.password = 'Password is required'
-    else if (formData.password.length < 6) errors.password = 'Password must be at least 6 characters'
-    if (!formData.confirmPassword) errors.confirmPassword = 'Please confirm your password'
-    else if (formData.password !== formData.confirmPassword) errors.confirmPassword = 'Passwords do not match'
-    if (!agreeTerms) errors.agreeTerms = 'Please agree to the terms and conditions'
+    if (!formData.firstName) errors.firstName = t('auth.firstNameRequired')       // ✅ TRANSLATED
+    if (!formData.lastName) errors.lastName = t('auth.lastNameRequired')          // ✅ TRANSLATED
+    if (!formData.email) errors.email = t('auth.emailRequired')                   // ✅ TRANSLATED
+    else if (!/\S+@\S+\.\S+/.test(formData.email)) errors.email = t('auth.emailInvalid')  // ✅ TRANSLATED
+    if (!formData.phone) errors.phone = t('auth.phoneRequired')                   // ✅ TRANSLATED
+    else if (!/^\d{10}$/.test(formData.phone.replace(/\D/g, ''))) errors.phone = t('auth.phoneInvalid')  // ✅ TRANSLATED
+    if (!formData.password) errors.password = t('auth.passwordRequired')          // ✅ TRANSLATED
+    else if (formData.password.length < 6) errors.password = t('auth.passwordMin')  // ✅ TRANSLATED
+    if (!formData.confirmPassword) errors.confirmPassword = t('auth.confirmRequired')  // ✅ TRANSLATED
+    else if (formData.password !== formData.confirmPassword) errors.confirmPassword = t('auth.passwordsDoNotMatch')  // ✅ TRANSLATED
+    if (!agreeTerms) errors.agreeTerms = t('auth.agreeRequired')                  // ✅ TRANSLATED
     setErrors(errors)
     return Object.keys(errors).length === 0
   }
@@ -65,15 +67,19 @@ const Register = () => {
     <div className="min-h-[80vh] flex items-center justify-center py-12 px-4">
       <div className="max-w-md w-full bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-8">
         <div className="text-center mb-8">
-          <h2 className="text-2xl font-bold text-gray-800 dark:text-white">Create Account</h2>
-          <p className="text-gray-500 dark:text-gray-400 mt-2">Join us and start shopping</p>
+          <h2 className="text-2xl font-bold text-gray-800 dark:text-white">
+            {t('auth.createAccount')}  {/* ✅ TRANSLATED */}
+          </h2>
+          <p className="text-gray-500 dark:text-gray-400 mt-2">
+            {t('auth.joinUs')}  {/* ✅ TRANSLATED */}
+          </p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                First Name
+                {t('auth.firstName')}  {/* ✅ TRANSLATED */}
               </label>
               <div className="relative">
                 <FiUser className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
@@ -93,7 +99,7 @@ const Register = () => {
 
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                Last Name
+                {t('auth.lastName')}  {/* ✅ TRANSLATED */}
               </label>
               <input
                 type="text"
@@ -111,7 +117,7 @@ const Register = () => {
 
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Email Address
+              {t('auth.emailAddress')}  {/* ✅ TRANSLATED */}
             </label>
             <div className="relative">
               <FiMail className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
@@ -131,7 +137,7 @@ const Register = () => {
 
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Phone Number
+              {t('auth.phoneNumber')}  {/* ✅ TRANSLATED */}
             </label>
             <div className="relative">
               <FiPhone className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
@@ -151,7 +157,7 @@ const Register = () => {
 
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Password
+              {t('auth.password')}  {/* ✅ TRANSLATED */}
             </label>
             <div className="relative">
               <FiLock className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
@@ -175,7 +181,7 @@ const Register = () => {
             </div>
             {errors.password && <p className="text-red-500 text-sm mt-1">{errors.password}</p>}
             <div className="mt-1 h-1 w-full bg-gray-200 rounded">
-              <div 
+              <div
                 className={`h-full rounded transition-all ${
                   formData.password.length === 0 ? 'w-0' :
                   formData.password.length < 4 ? 'w-1/3 bg-red-500' :
@@ -185,15 +191,18 @@ const Register = () => {
               />
             </div>
             <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-              Password strength: {formData.password.length === 0 ? 'Empty' :
-                formData.password.length < 4 ? 'Weak' :
-                formData.password.length < 8 ? 'Medium' : 'Strong'}
+              {t('auth.passwordStrength')}: {
+                formData.password.length === 0 ? t('auth.empty') :      // ✅ TRANSLATED
+                formData.password.length < 4 ? t('auth.weak') :          // ✅ TRANSLATED
+                formData.password.length < 8 ? t('auth.medium') :        // ✅ TRANSLATED
+                t('auth.strong')                                          // ✅ TRANSLATED
+              }
             </p>
           </div>
 
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Confirm Password
+              {t('auth.confirmPassword')}  {/* ✅ TRANSLATED */}
             </label>
             <div className="relative">
               <FiLock className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
@@ -226,13 +235,13 @@ const Register = () => {
               className="mt-1 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
             />
             <label className="text-sm text-gray-600 dark:text-gray-300">
-              I agree to the{' '}
+              {t('auth.iAgreeTo')}{' '}  {/* ✅ TRANSLATED */}
               <Link to="/terms" className="text-blue-600 hover:underline">
-                Terms & Conditions
+                {t('auth.termsConditions')}  {/* ✅ TRANSLATED */}
               </Link>
-              {' '}and{' '}
+              {' '}{t('auth.and')}{' '}  {/* ✅ TRANSLATED */}
               <Link to="/privacy" className="text-blue-600 hover:underline">
-                Privacy Policy
+                {t('auth.privacyPolicy')}  {/* ✅ TRANSLATED */}
               </Link>
             </label>
           </div>
@@ -246,18 +255,18 @@ const Register = () => {
             {loading ? (
               <>
                 <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
-                Creating Account...
+                {t('auth.creatingAccount')}  {/* ✅ TRANSLATED */}
               </>
             ) : (
-              'Create Account'
+              t('auth.createAccount')  /* ✅ TRANSLATED */
             )}
           </button>
         </form>
 
         <p className="text-center text-sm text-gray-600 dark:text-gray-400 mt-6">
-          Already have an account?{' '}
+          {t('auth.alreadyHaveAccount')}{' '}  {/* ✅ TRANSLATED */}
           <Link to="/auth/login" className="text-blue-600 hover:underline font-medium">
-            Login here
+            {t('auth.login')}  {/* ✅ TRANSLATED */}
           </Link>
         </p>
       </div>

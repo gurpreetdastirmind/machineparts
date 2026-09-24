@@ -1,12 +1,13 @@
 // frontend/src/pages/admin/AdminLayout.jsx
 import React, { useState, useEffect } from 'react'
-import { Link, Outlet, useNavigate, useLocation } from 'react-router-dom'
+import { Link, Outlet, useNavigate, useLocation, Navigate } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import {
   FiHome, FiPackage, FiShoppingBag, FiUsers,
   FiSettings, FiLogOut, FiMenu, FiX,
-  FiBarChart2, FiTag
+  FiBarChart2, FiTag, FiPercent, FiActivity, FiMessageSquare
 } from 'react-icons/fi'
+import machineLogo from '../../images/machine_logo1.png'
 
 const AdminLayout = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false)
@@ -33,11 +34,13 @@ const AdminLayout = () => {
 
   const menuItems = [
     { label: 'Dashboard', icon: FiHome, path: '/admin/dashboard' },
+    { label: 'Analytics', icon: FiActivity, path: '/admin/analytics' },
     { label: 'Products', icon: FiPackage, path: '/admin/products' },
     { label: 'Orders', icon: FiShoppingBag, path: '/admin/orders' },
     { label: 'Users', icon: FiUsers, path: '/admin/users' },
     { label: 'Categories', icon: FiTag, path: '/admin/categories' },
-    { label: 'Analytics', icon: FiBarChart2, path: '/admin/analytics' },
+    { label: 'Coupons', icon: FiPercent, path: '/admin/coupons' },
+    { label: 'Reviews', icon: FiMessageSquare, path: '/admin/reviews' },
     { label: 'Settings', icon: FiSettings, path: '/admin/settings' },
   ]
 
@@ -56,7 +59,7 @@ const AdminLayout = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex">
+    <div className="h-screen bg-gray-50 flex overflow-hidden">
       {/* Mobile Overlay */}
       {sidebarOpen && (
         <div
@@ -66,39 +69,50 @@ const AdminLayout = () => {
       )}
 
       {/* Sidebar */}
-      <aside className={`fixed inset-y-0 left-0 z-50 w-72 bg-gradient-to-b from-gray-900 to-gray-800 text-white transform transition-all duration-300 ease-in-out ${
-        sidebarOpen ? 'translate-x-0' : '-translate-x-full'
-      } lg:relative lg:translate-x-0 lg:flex lg:flex-col lg:w-64 flex-shrink-0`}>
+      <aside
+        className={`fixed inset-y-0 left-0 z-50 w-72 bg-gradient-to-b from-gray-900 to-gray-800 text-white transform transition-all duration-300 ease-in-out ${
+          sidebarOpen ? 'translate-x-0' : '-translate-x-full'
+        } lg:relative lg:translate-x-0 lg:flex lg:flex-col lg:w-64 flex-shrink-0 h-full`}
+      >
         {/* Sidebar Header */}
-        <div className="flex items-center justify-between p-4 border-b border-gray-700/50">
-          <Link to="/admin/dashboard" className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-gradient-to-r from-blue-500 to-blue-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-500/25">
-              <span className="text-white font-bold text-lg">MP</span>
-            </div>
-            <div>
-              <span className="font-bold text-lg block">Admin</span>
-              <span className="text-xs text-gray-400">Panel</span>
+        <div className="flex items-center justify-between p-4 border-b border-gray-700/50 flex-shrink-0">
+          <Link to="/admin/dashboard" className="flex items-center gap-3 min-w-0">
+            <div className="w-52 h-11 bg-white rounded-xl flex items-center justify-center shadow-lg overflow-hidden flex-shrink-0">
+              <img
+                src={machineLogo}
+                alt="SAINATH IMPEX"
+                className="w-52 h-full object-contain p-0.5"
+                onError={(e) => {
+                  e.target.style.display = 'none'
+                  const parent = e.target.parentElement
+                  if (parent) {
+                    parent.innerHTML = `<span class="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center">SI</span>`
+                  }
+                }}
+              />
             </div>
           </Link>
           <button
             onClick={() => setSidebarOpen(false)}
-            className="lg:hidden p-2 rounded-lg hover:bg-gray-700/50 transition-colors"
+            className="lg:hidden p-2 rounded-lg hover:bg-gray-700/50 transition-colors flex-shrink-0"
           >
             <FiX size={22} />
           </button>
         </div>
 
         {/* User Profile */}
-        <div className="p-4 border-b border-gray-700/50">
+        <div className="p-4 border-b border-gray-700/50 flex-shrink-0">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-gradient-to-r from-purple-500 to-pink-500 rounded-full flex items-center justify-center text-white font-bold text-sm">
+            <div className="w-10 h-10 bg-gradient-to-r from-purple-500 to-pink-500 rounded-full flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
               {user?.firstName?.[0] || 'A'}
             </div>
             <div className="flex-1 min-w-0">
               <p className="font-medium text-sm truncate">
                 {user?.firstName} {user?.lastName}
               </p>
-              <p className="text-xs text-gray-400 truncate">{user?.email || 'admin@example.com'}</p>
+              <p className="text-xs text-gray-400 truncate">
+                {user?.email || 'admin@example.com'}
+              </p>
             </div>
           </div>
         </div>
@@ -128,7 +142,7 @@ const AdminLayout = () => {
         </nav>
 
         {/* Logout Button */}
-        <div className="p-3 border-t border-gray-700/50">
+        <div className="p-3 border-t border-gray-700/50 flex-shrink-0">
           <button
             onClick={handleLogout}
             className="flex items-center gap-3 w-full px-4 py-2.5 rounded-xl text-red-400 hover:bg-red-500/10 hover:text-red-300 transition-all duration-200"
@@ -139,10 +153,10 @@ const AdminLayout = () => {
         </div>
       </aside>
 
-      {/* Main Content Area */}
-      <div className="flex-1 flex flex-col min-w-0">
-        {/* Top Header */}
-        <header className="bg-white border-b border-gray-200 sticky top-0 z-30">
+      {/* Main Content Column */}
+      <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
+        {/* Top Header — stays fixed at top of content area */}
+        <header className="bg-white border-b border-gray-200 flex-shrink-0">
           <div className="flex items-center justify-between px-4 py-3">
             <div className="flex items-center gap-3">
               <button
@@ -171,15 +185,15 @@ const AdminLayout = () => {
           </div>
         </header>
 
-        {/* ✅ Page Content - This is where the admin content should render */}
-        <main className="flex-1 p-3 sm:p-4 md:p-6 overflow-x-hidden">
+        {/* ✅ THE KEY CHANGE: main is the ONLY scrollable area */}
+        <main className="flex-1 overflow-y-auto p-3 sm:p-4 md:p-6">
           <div className="max-w-7xl mx-auto">
             <Outlet />
           </div>
         </main>
 
-        {/* Footer */}
-        <footer className="border-t border-gray-200 bg-white px-4 py-3">
+        {/* Footer — pinned to bottom */}
+        <footer className="border-t border-gray-200 bg-white px-4 py-3 flex-shrink-0">
           <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-gray-500 max-w-7xl mx-auto">
             <span>© {new Date().getFullYear()} MachineParts Admin</span>
             <div className="flex items-center gap-4">

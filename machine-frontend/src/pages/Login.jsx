@@ -1,11 +1,13 @@
 // frontend/src/pages/Login.jsx
 import React, { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'  // ✅ ADD
 import { useAuth } from '../context/AuthContext'
 import { FiEye, FiEyeOff, FiMail, FiLock } from 'react-icons/fi'
 import { FaGoogle, FaFacebook } from 'react-icons/fa'
 
 const Login = () => {
+  const { t } = useTranslation()  // ✅ ADD HOOK
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
@@ -18,10 +20,10 @@ const Login = () => {
 
   const validate = () => {
     const errors = {}
-    if (!email) errors.email = 'Email is required'
-    else if (!/\S+@\S+\.\S+/.test(email)) errors.email = 'Email is invalid'
-    if (!password) errors.password = 'Password is required'
-    else if (password.length < 6) errors.password = 'Password must be at least 6 characters'
+    if (!email) errors.email = t('auth.emailRequired')  // ✅ TRANSLATED
+    else if (!/\S+@\S+\.\S+/.test(email)) errors.email = t('auth.emailInvalid')  // ✅ TRANSLATED
+    if (!password) errors.password = t('auth.passwordRequired')  // ✅ TRANSLATED
+    else if (password.length < 6) errors.password = t('auth.passwordMin')  // ✅ TRANSLATED
     setErrors(errors)
     return Object.keys(errors).length === 0
   }
@@ -35,9 +37,9 @@ const Login = () => {
     setLoading(false)
 
     if (result.success) {
-      // ✅ If user is admin (should not happen through user login), redirect to admin
-      // But regular users go to home
-      navigate('/')
+      const redirectUrl = sessionStorage.getItem('redirectAfterLogin') || '/'
+      sessionStorage.removeItem('redirectAfterLogin')
+      navigate(redirectUrl)
     }
   }
 
@@ -48,14 +50,18 @@ const Login = () => {
           <div className="w-16 h-16 bg-blue-600 rounded-full flex items-center justify-center mx-auto mb-4">
             <span className="text-white text-2xl font-bold">MP</span>
           </div>
-          <h2 className="text-2xl font-bold text-gray-800 dark:text-white">Welcome Back</h2>
-          <p className="text-gray-500 dark:text-gray-400 mt-2">Sign in to your account</p>
+          <h2 className="text-2xl font-bold text-gray-800 dark:text-white">
+            {t('auth.welcomeBack')}  {/* ✅ */}
+          </h2>
+          <p className="text-gray-500 dark:text-gray-400 mt-2">
+            {t('auth.signIn')}  {/* ✅ */}
+          </p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Email Address
+              {t('auth.emailAddress')}  {/* ✅ */}
             </label>
             <div className="relative">
               <FiMail className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
@@ -75,10 +81,10 @@ const Login = () => {
           <div>
             <div className="flex justify-between items-center mb-1">
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-                Password
+                {t('auth.password')}  {/* ✅ */}
               </label>
               <Link to="/auth/forgot-password" className="text-sm text-blue-600 hover:underline">
-                Forgot Password?
+                {t('auth.forgotPassword')}  {/* ✅ */}
               </Link>
             </div>
             <div className="relative">
@@ -111,7 +117,7 @@ const Login = () => {
                 onChange={(e) => setRememberMe(e.target.checked)}
                 className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
               />
-              Remember me
+              {t('auth.rememberMe')}  {/* ✅ */}
             </label>
           </div>
 
@@ -123,10 +129,10 @@ const Login = () => {
             {loading ? (
               <>
                 <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
-                Logging in...
+                {t('auth.loggingIn')}  {/* ✅ */}
               </>
             ) : (
-              'Login'
+              t('auth.loginBtn')  /* ✅ */
             )}
           </button>
         </form>
@@ -136,25 +142,27 @@ const Login = () => {
             <div className="w-full border-t border-gray-300 dark:border-gray-600"></div>
           </div>
           <div className="relative flex justify-center text-sm">
-            <span className="px-2 bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400">OR</span>
+            <span className="px-2 bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400">
+              {t('auth.or')}  {/* ✅ */}
+            </span>
           </div>
         </div>
 
         <div className="space-y-3">
           <button className="w-full flex items-center justify-center gap-3 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-gray-700 dark:text-gray-300">
             <FaGoogle size={20} className="text-red-500" />
-            Continue with Google
+            {t('auth.continueWithGoogle')}  {/* ✅ */}
           </button>
           <button className="w-full flex items-center justify-center gap-3 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-gray-700 dark:text-gray-300">
             <FaFacebook size={20} className="text-blue-600" />
-            Continue with Facebook
+            {t('auth.continueWithFacebook')}  {/* ✅ */}
           </button>
         </div>
 
         <p className="text-center text-sm text-gray-600 dark:text-gray-400 mt-6">
-          Don't have an account?{' '}
+          {t('auth.dontHaveAccount')}{' '}  {/* ✅ */}
           <Link to="/auth/register" className="text-blue-600 hover:underline font-medium">
-            Register here
+            {t('auth.register')}  {/* ✅ */}
           </Link>
         </p>
       </div>

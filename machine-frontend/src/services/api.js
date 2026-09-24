@@ -11,6 +11,12 @@ const api = axios.create({
   },
 })
 
+// ✅ Cache-busting headers for all GET requests
+api.defaults.headers.get = {
+  'Cache-Control': 'no-cache',
+  'Pragma': 'no-cache',
+}
+
 // Request interceptor to add token
 api.interceptors.request.use(
   (config) => {

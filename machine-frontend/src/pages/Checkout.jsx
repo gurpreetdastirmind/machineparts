@@ -1,19 +1,29 @@
+// frontend/src/pages/Checkout.jsx
 import React, { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import { useCart } from '../context/CartContext'
 import { useAuth } from '../context/AuthContext'
 import { useNotification } from '../context/NotificationContext'
 import { FiTruck, FiCreditCard, FiShield, FiCheckCircle } from 'react-icons/fi'
+import { orderService } from '../services/orderService'
 
 const Checkout = () => {
+  const { t } = useTranslation()
   const navigate = useNavigate()
-  const { cartItems, cartTotal, clearCart } = useCart()
+  const {
+    cartItems,
+    cartTotal,
+    clearCart,
+    appliedCoupon,
+    couponDiscount,
+    removeCoupon
+  } = useCart()
   const { user, isAuthenticated } = useAuth()
   const { addNotification } = useNotification()
   const [step, setStep] = useState(1)
   const [loading, setLoading] = useState(false)
 
-  // Shipping form state
   const [shippingData, setShippingData] = useState({
     fullName: user?.firstName + ' ' + user?.lastName || '',
     email: user?.email || '',
@@ -27,7 +37,6 @@ const Checkout = () => {
     useDifferentBilling: false,
   })
 
-  // Payment state
   const [paymentData, setPaymentData] = useState({
     method: 'card',
     cardNumber: '',
@@ -42,14 +51,14 @@ const Checkout = () => {
   const shippingCost = shippingMethod === 'standard' ? 200 : shippingMethod === 'express' ? 500 : 1000
   const shippingFree = subtotal > 1000
   const tax = Math.round(subtotal * 0.1)
-  const total = subtotal + (shippingFree ? 0 : shippingCost) + tax
+  const discount = couponDiscount || 0
+  const total = Math.max(0, subtotal + (shippingFree ? 0 : shippingCost) + tax - discount)
 
   const handleShippingSubmit = (e) => {
     e.preventDefault()
-    // Validate shipping data
-    if (!shippingData.fullName || !shippingData.email || !shippingData.address || 
+    if (!shippingData.fullName || !shippingData.email || !shippingData.address ||
         !shippingData.city || !shippingData.state || !shippingData.postalCode) {
-      addNotification('Please fill all required fields', 'error')
+      addNotification(t('checkout.fillAllFields'), 'error')
       return
     }
     setStep(2)
@@ -59,19 +68,51 @@ const Checkout = () => {
   const handlePaymentSubmit = async (e) => {
     e.preventDefault()
     setLoading(true)
-    
+
     try {
-      // Process payment
-      // await paymentService.processPayment({ ...paymentData, amount: total })
-      
-      // Create order
-      // await orderService.createOrder({ ...shippingData, items: cartItems, total })
-      
-      addNotification('Order placed successfully!', 'success')
-      clearCart()
-      setStep(3)
+      const orderData = {
+        items: cartItems.map(item => ({
+          productId: item.productId || item.id,
+          name: item.name || item.productName,
+          quantity: item.quantity,
+          price: item.discountedPrice || item.price || 0,
+          imageUrl: item.imageUrl || item.image || ''
+        })),
+        totalAmount: total,
+        paymentMethod: paymentData.method || 'COD',
+        shippingAddress: {
+          fullName: shippingData.fullName,
+          email: shippingData.email,
+          phone: shippingData.phone,
+          address: shippingData.address,
+          city: shippingData.city,
+          state: shippingData.state,
+          postalCode: shippingData.postalCode,
+          country: shippingData.country || 'India'
+        },
+        shippingCost: shippingFree ? 0 : shippingCost,
+        tax: tax,
+        discount: discount,
+        couponCode: appliedCoupon?.code || null
+      }
+
+      console.log('Placing order:', orderData)
+
+      const response = await orderService.createOrder(orderData)
+      console.log('Order response:', response.data)
+
+      if (response.data.success) {
+        addNotification(t('checkout.orderSuccess'), 'success')
+        if (appliedCoupon) removeCoupon()
+        sessionStorage.removeItem('appliedCoupon')
+        clearCart()
+        setStep(3)
+      } else {
+        throw new Error(response.data.message || t('checkout.orderFailed'))
+      }
     } catch (error) {
-      addNotification('Payment failed. Please try again.', 'error')
+      console.error('Payment error:', error)
+      addNotification(error.response?.data?.message || error.message || t('checkout.paymentFailed'), 'error')
     } finally {
       setLoading(false)
     }
@@ -81,12 +122,14 @@ const Checkout = () => {
     return (
       <div className="container-custom py-12 text-center">
         <div className="text-6xl mb-4">🔒</div>
-        <h2 className="text-2xl font-bold text-gray-800 dark:text-white mb-2">Please login to checkout</h2>
-        <button 
+        <h2 className="text-2xl font-bold text-gray-800 dark:text-white mb-2">
+          {t('checkout.loginToCheckout')}
+        </h2>
+        <button
           onClick={() => navigate('/auth/login')}
           className="inline-block px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
         >
-          Login Now
+          {t('wishlist.loginNow')}
         </button>
       </div>
     )
@@ -96,12 +139,14 @@ const Checkout = () => {
     return (
       <div className="container-custom py-12 text-center">
         <div className="text-6xl mb-4">🛒</div>
-        <h2 className="text-2xl font-bold text-gray-800 dark:text-white mb-2">Your cart is empty</h2>
-        <button 
+        <h2 className="text-2xl font-bold text-gray-800 dark:text-white mb-2">
+          {t('cart.empty')}
+        </h2>
+        <button
           onClick={() => navigate('/products')}
           className="inline-block px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
         >
-          Continue Shopping
+          {t('cart.continueShopping')}
         </button>
       </div>
     )
@@ -109,7 +154,9 @@ const Checkout = () => {
 
   return (
     <div className="container-custom py-8">
-      <h1 className="text-2xl md:text-3xl font-bold text-gray-800 dark:text-white mb-6">Checkout</h1>
+      <h1 className="text-2xl md:text-3xl font-bold text-gray-800 dark:text-white mb-6">
+        {t('checkout.title')}
+      </h1>
 
       {/* Progress Bar */}
       <div className="flex items-center justify-center mb-8">
@@ -120,7 +167,7 @@ const Checkout = () => {
             }`}>
               1
             </div>
-            <span className="font-medium">Shipping</span>
+            <span className="font-medium">{t('checkout.shipping')}</span>
           </div>
           <div className="w-16 h-0.5 bg-gray-300 dark:bg-gray-700">
             <div className={`h-full bg-blue-600 transition-all ${step >= 2 ? 'w-full' : 'w-0'}`} />
@@ -131,7 +178,7 @@ const Checkout = () => {
             }`}>
               2
             </div>
-            <span className="font-medium">Payment</span>
+            <span className="font-medium">{t('checkout.payment')}</span>
           </div>
           <div className="w-16 h-0.5 bg-gray-300 dark:bg-gray-700">
             <div className={`h-full bg-blue-600 transition-all ${step >= 3 ? 'w-full' : 'w-0'}`} />
@@ -142,23 +189,24 @@ const Checkout = () => {
             }`}>
               3
             </div>
-            <span className="font-medium">Confirmation</span>
+            <span className="font-medium">{t('checkout.confirmation')}</span>
           </div>
         </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Main Content */}
         <div className="lg:col-span-2">
           {/* Step 1: Shipping */}
           {step === 1 && (
             <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
-              <h2 className="text-xl font-semibold text-gray-800 dark:text-white mb-4">Shipping Address</h2>
+              <h2 className="text-xl font-semibold text-gray-800 dark:text-white mb-4">
+                {t('checkout.shippingAddress')}
+              </h2>
               <form onSubmit={handleShippingSubmit}>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Full Name *
+                      {t('checkout.fullName')} *
                     </label>
                     <input
                       type="text"
@@ -170,7 +218,7 @@ const Checkout = () => {
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Email *
+                      {t('checkout.email')} *
                     </label>
                     <input
                       type="email"
@@ -182,7 +230,7 @@ const Checkout = () => {
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Phone Number *
+                      {t('checkout.phone')} *
                     </label>
                     <input
                       type="tel"
@@ -194,7 +242,7 @@ const Checkout = () => {
                   </div>
                   <div className="md:col-span-2">
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Street Address *
+                      {t('checkout.streetAddress')} *
                     </label>
                     <input
                       type="text"
@@ -206,7 +254,7 @@ const Checkout = () => {
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      City *
+                      {t('checkout.city')} *
                     </label>
                     <input
                       type="text"
@@ -218,7 +266,7 @@ const Checkout = () => {
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      State *
+                      {t('checkout.state')} *
                     </label>
                     <input
                       type="text"
@@ -230,7 +278,7 @@ const Checkout = () => {
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Postal Code *
+                      {t('checkout.postalCode')} *
                     </label>
                     <input
                       type="text"
@@ -242,7 +290,7 @@ const Checkout = () => {
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Country
+                      {t('checkout.country')}
                     </label>
                     <select
                       value={shippingData.country}
@@ -265,7 +313,7 @@ const Checkout = () => {
                       onChange={(e) => setShippingData({ ...shippingData, saveAsDefault: e.target.checked })}
                       className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                     />
-                    Save as default address
+                    {t('checkout.saveAsDefault')}
                   </label>
                   <label className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
                     <input
@@ -274,7 +322,7 @@ const Checkout = () => {
                       onChange={(e) => setShippingData({ ...shippingData, useDifferentBilling: e.target.checked })}
                       className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                     />
-                    Use different billing address
+                    {t('checkout.useDifferentBilling')}
                   </label>
                 </div>
 
@@ -282,7 +330,7 @@ const Checkout = () => {
                   type="submit"
                   className="mt-6 w-full py-3 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition-colors"
                 >
-                  Continue to Payment
+                  {t('checkout.continueToPayment')}
                 </button>
               </form>
             </div>
@@ -291,8 +339,10 @@ const Checkout = () => {
           {/* Step 2: Payment */}
           {step === 2 && (
             <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
-              <h2 className="text-xl font-semibold text-gray-800 dark:text-white mb-4">Payment Method</h2>
-              
+              <h2 className="text-xl font-semibold text-gray-800 dark:text-white mb-4">
+                {t('checkout.paymentMethod')}
+              </h2>
+
               <div className="space-y-4">
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
                   {['card', 'netbanking', 'upi', 'cod'].map((method) => (
@@ -305,10 +355,10 @@ const Checkout = () => {
                           : 'border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:border-blue-400'
                       }`}
                     >
-                      {method === 'card' && '💳 Card'}
-                      {method === 'netbanking' && '🏦 Net Banking'}
-                      {method === 'upi' && '📱 UPI'}
-                      {method === 'cod' && '💵 Cash on Delivery'}
+                      {method === 'card' && `💳 ${t('checkout.card')}`}
+                      {method === 'netbanking' && `🏦 ${t('checkout.netBanking')}`}
+                      {method === 'upi' && `📱 ${t('checkout.upi')}`}
+                      {method === 'cod' && `💵 ${t('checkout.cod')}`}
                     </button>
                   ))}
                 </div>
@@ -317,7 +367,7 @@ const Checkout = () => {
                   <div className="space-y-4 mt-4">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                        Card Number
+                        {t('checkout.cardNumber')}
                       </label>
                       <input
                         type="text"
@@ -330,7 +380,7 @@ const Checkout = () => {
                     <div className="grid grid-cols-2 gap-4">
                       <div>
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                          Expiry Date
+                          {t('checkout.expiryDate')}
                         </label>
                         <input
                           type="text"
@@ -342,7 +392,7 @@ const Checkout = () => {
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                          CVV
+                          {t('checkout.cvv')}
                         </label>
                         <input
                           type="password"
@@ -356,7 +406,7 @@ const Checkout = () => {
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                        Cardholder Name
+                        {t('checkout.cardholderName')}
                       </label>
                       <input
                         type="text"
@@ -372,7 +422,7 @@ const Checkout = () => {
                 {paymentData.method === 'upi' && (
                   <div className="mt-4">
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      UPI ID
+                      {t('checkout.upiId')}
                     </label>
                     <input
                       type="text"
@@ -385,10 +435,10 @@ const Checkout = () => {
                 {paymentData.method === 'netbanking' && (
                   <div className="mt-4">
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                      Select Bank
+                      {t('checkout.selectBank')}
                     </label>
                     <select className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-transparent text-gray-800 dark:text-white focus:outline-none focus:border-blue-500">
-                      <option value="">Select your bank</option>
+                      <option value="">{t('checkout.selectBank')}</option>
                       <option value="sbi">State Bank of India</option>
                       <option value="hdfc">HDFC Bank</option>
                       <option value="icici">ICICI Bank</option>
@@ -399,7 +449,7 @@ const Checkout = () => {
 
                 <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400 mt-4">
                   <FiShield className="text-green-500" />
-                  <span>Your payment is secure with SSL encryption</span>
+                  <span>{t('checkout.secureNote')}</span>
                 </div>
 
                 <div className="flex gap-3 mt-6">
@@ -407,7 +457,7 @@ const Checkout = () => {
                     onClick={() => setStep(1)}
                     className="flex-1 py-3 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-gray-700 dark:text-gray-300"
                   >
-                    Back
+                    {t('checkout.back')}
                   </button>
                   <button
                     onClick={handlePaymentSubmit}
@@ -417,10 +467,10 @@ const Checkout = () => {
                     {loading ? (
                       <>
                         <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
-                        Processing...
+                        {t('checkout.processing')}
                       </>
                     ) : (
-                      'Pay Now'
+                      t('checkout.payNow')
                     )}
                   </button>
                 </div>
@@ -434,22 +484,26 @@ const Checkout = () => {
               <div className="w-20 h-20 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center mx-auto mb-4">
                 <FiCheckCircle className="w-10 h-10 text-green-500" />
               </div>
-              <h2 className="text-2xl font-bold text-gray-800 dark:text-white mb-2">Order Placed Successfully!</h2>
+              <h2 className="text-2xl font-bold text-gray-800 dark:text-white mb-2">
+                {t('checkout.orderPlaced')}
+              </h2>
               <p className="text-gray-500 dark:text-gray-400 mb-2">Order #ORD-2024-001</p>
-              <p className="text-gray-500 dark:text-gray-400 mb-6">Thank you for your purchase. We'll send you a confirmation email shortly.</p>
-              
+              <p className="text-gray-500 dark:text-gray-400 mb-6">
+                {t('checkout.thankYou')}
+              </p>
+
               <div className="flex flex-col sm:flex-row gap-3 justify-center">
-                <button 
+                <button
                   onClick={() => navigate('/account/orders')}
                   className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
                 >
-                  Track Order
+                  {t('checkout.trackOrder')}
                 </button>
-                <button 
+                <button
                   onClick={() => navigate('/')}
                   className="px-6 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-gray-700 dark:text-gray-300"
                 >
-                  Continue Shopping
+                  {t('checkout.continueShoppingBtn')}
                 </button>
               </div>
             </div>
@@ -459,22 +513,31 @@ const Checkout = () => {
         {/* Order Summary */}
         <div className="lg:col-span-1">
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 sticky top-20">
-            <h2 className="text-xl font-bold text-gray-800 dark:text-white mb-4">Order Summary</h2>
-            
+            <h2 className="text-xl font-bold text-gray-800 dark:text-white mb-4">
+              {t('cart.orderSummary')}
+            </h2>
+
             {step === 1 && (
               <div className="space-y-3 border-b border-gray-200 dark:border-gray-700 pb-4">
                 <div className="flex justify-between text-gray-600 dark:text-gray-300">
-                  <span>Subtotal ({cartItems.length} items)</span>
+                  <span>{t('cart.subtotal')} ({cartItems.length} {t('cart.items')})</span>
                   <span>₹{subtotal.toFixed(2)}</span>
                 </div>
                 <div className="flex justify-between text-gray-600 dark:text-gray-300">
-                  <span>Shipping</span>
-                  <span>{shippingFree ? 'Free' : `₹${shippingCost.toFixed(2)}`}</span>
+                  <span>{t('cart.shipping')}</span>
+                  <span>{shippingFree ? t('cart.free') : `₹${shippingCost.toFixed(2)}`}</span>
                 </div>
                 <div className="flex justify-between text-gray-600 dark:text-gray-300">
-                  <span>Tax (10%)</span>
+                  <span>{t('cart.tax')} (10%)</span>
                   <span>₹{tax.toFixed(2)}</span>
                 </div>
+                {/* ✅ NEW: Discount row for Step 1 */}
+                {discount > 0 && (
+                  <div className="flex justify-between text-green-600 font-medium">
+                    <span>Discount ({appliedCoupon?.code})</span>
+                    <span>-₹{discount.toFixed(2)}</span>
+                  </div>
+                )}
               </div>
             )}
 
@@ -482,34 +545,41 @@ const Checkout = () => {
               <>
                 <div className="space-y-3 border-b border-gray-200 dark:border-gray-700 pb-4">
                   <div className="flex justify-between text-gray-600 dark:text-gray-300">
-                    <span>Subtotal ({cartItems.length} items)</span>
+                    <span>{t('cart.subtotal')} ({cartItems.length} {t('cart.items')})</span>
                     <span>₹{subtotal.toFixed(2)}</span>
                   </div>
                   <div className="flex justify-between text-gray-600 dark:text-gray-300">
-                    <span>Shipping</span>
-                    <span>{shippingFree ? 'Free' : `₹${shippingCost.toFixed(2)}`}</span>
+                    <span>{t('cart.shipping')}</span>
+                    <span>{shippingFree ? t('cart.free') : `₹${shippingCost.toFixed(2)}`}</span>
                   </div>
                   <div className="flex justify-between text-gray-600 dark:text-gray-300">
-                    <span>Tax (10%)</span>
+                    <span>{t('cart.tax')} (10%)</span>
                     <span>₹{tax.toFixed(2)}</span>
                   </div>
+                  {/* ✅ NEW: Discount row for Step 2 */}
+                  {discount > 0 && (
+                    <div className="flex justify-between text-green-600 font-medium">
+                      <span>Discount ({appliedCoupon?.code})</span>
+                      <span>-₹{discount.toFixed(2)}</span>
+                    </div>
+                  )}
                 </div>
-                
+
                 <div className="space-y-2 mt-4">
                   <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
                     <FiTruck className="text-blue-600" />
-                    <span>Shipping: {shippingFree ? 'Free' : 'Standard'}</span>
+                    <span>{t('cart.shipping')}: {shippingFree ? t('cart.free') : t('checkout.standard')}</span>
                   </div>
                   <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
                     <FiCreditCard className="text-blue-600" />
-                    <span>Payment: {paymentData.method.charAt(0).toUpperCase() + paymentData.method.slice(1)}</span>
+                    <span>{t('checkout.payment')}: {t(`checkout.${paymentData.method}`)}</span>
                   </div>
                 </div>
               </>
             )}
 
             <div className="flex justify-between text-xl font-bold text-gray-800 dark:text-white py-4">
-              <span>Total</span>
+              <span>{t('cart.total')}</span>
               <span>₹{total.toFixed(2)}</span>
             </div>
           </div>

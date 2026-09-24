@@ -31,12 +31,14 @@ export const authService = {
     return api.get('/user/profile')
   },
 
+  // ✅ NEW: Update profile (sends to /auth/update-profile)
   updateProfile: (userData) => {
-    return api.put('/user/profile', userData)
+    return api.put('/auth/update-profile', userData)
   },
 
+  // ✅ NEW: Change password (sends to /auth/change-password)
   changePassword: (currentPassword, newPassword) => {
-    return api.post('/user/change-password', { currentPassword, newPassword })
+    return api.post('/auth/change-password', { currentPassword, newPassword })
   },
 
   refreshToken: () => {

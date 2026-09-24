@@ -10,6 +10,12 @@ const api = axios.create({
   }
 })
 
+// ✅ Cache-busting headers for all GET requests
+api.defaults.headers.get = {
+  'Cache-Control': 'no-cache',
+  'Pragma': 'no-cache',
+}
+
 // Add token to requests
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem('token')
@@ -25,7 +31,7 @@ export const productService = {
     return api.get('/products', { params })
   },
 
-  // Get single product - FIXED to handle response properly
+  // Get single product
   getProductById: (id) => {
     return api.get(`/products/${id}`)
   },
@@ -60,8 +66,27 @@ export const productService = {
     return api.get(`/products/${productId}/reviews`)
   },
 
+  // ✅ Submit a review for a product
+  submitReview: (productId, reviewData) => {
+    return api.post(`/products/${productId}/reviews`, reviewData)
+  },
+
   // Get related products
   getRelatedProducts: (productId) => {
     return api.get(`/products/${productId}/related`)
-  }
+  },
+
+  // ✅ Admin: Get all reviews
+  getAllReviews: () => {
+    return api.get('/admin/reviews')
+  },
+
+  // ✅ Admin: Delete a review
+  deleteReviewAdmin: (reviewId) => {
+    return api.delete(`/admin/reviews/${reviewId}`)
+  },
+
+  getDynamicFilters: (category) =>
+    api.get('/products/filters', { params: { category } }),
+
 }

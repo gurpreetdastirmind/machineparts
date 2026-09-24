@@ -1,7 +1,8 @@
 // backend/controllers/authController.js
 const jwt = require('jsonwebtoken');
-const { findUserByEmail, findUserById, comparePassword, hashPassword } = require('../config/database');
-
+const { db,findUserByEmail, findUserById, comparePassword, hashPassword } = require('../config/database');
+const nodemailer = require('nodemailer'); 
+const crypto = require('crypto');
 const JWT_SECRET = process.env.JWT_SECRET || 'your_secret_key';
 
 // Generate token with role embedded
@@ -94,7 +95,7 @@ exports.login = async (req, res) => {
     });
   } catch (error) {
     console.error('Login error:', error);
-    res.status(500).json({ success: false, message: 'Login failed', error: error.message });
+    res.status(500).json({ success: false, messag0e: 'Login failed', error: error.message });
   }
 };
 
@@ -137,32 +138,235 @@ exports.forgotPassword = async (req, res) => {
       return res.status(404).json({ success: false, message: 'User not found' });
     }
 
-    // In a real app, send email with reset link
+    // 1. Generate a secure random token
+    const resetToken = crypto.randomBytes(32).toString('hex');
+    
+    // 2. Set expiry time (e.g., 1 hour from now)
+    const resetTokenExpiry = Date.now() + 3600000; // 1 hour in milliseconds
+
+    // 3. Save token to database
+    // NOTE: You need to add 'resetToken' and 'resetTokenExpiry' columns to your 'users' table first!
+    await new Promise((resolve, reject) => {
+      db.run(
+        'UPDATE users SET resetToken = ?, resetTokenExpiry = ? WHERE email = ?',
+        [resetToken, resetTokenExpiry, email],
+        (err) => err ? reject(err) : resolve()
+      );
+    });
+
+    // 4. Create the reset link
+    // Make sure FRONTEND_URL is in your .env file
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+    const resetLink = `${frontendUrl}/auth/reset-password?token=${resetToken}`;
+
+    // 5. Configure Nodemailer (Using the same setup as your Contact form)
+    const transporter = nodemailer.createTransport({
+      service: 'gmail',
+      auth: {
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASS 
+      }
+    });
+
+    // 6. Setup Email Data
+    const mailOptions = {
+      from: `"Machine Parts" <${process.env.EMAIL_USER}>`,
+      to: email,
+      subject: 'Password Reset Request',
+      html: `
+        <h3>Password Reset</h3>
+        <p>You requested a password reset. Click the link below to set a new password:</p>
+        <a href="${resetLink}" style="padding: 10px 20px; background-color: #2563eb; color: white; text-decoration: none; border-radius: 5px;">Reset Password</a>
+        <p>This link will expire in 1 hour.</p>
+        <p>If you didn't request this, please ignore this email.</p>
+      `
+    };
+
+    // 7. Send the email
+    await transporter.sendMail(mailOptions);
+
     res.json({
       success: true,
       message: 'Password reset link sent to your email'
     });
+
   } catch (error) {
     console.error('Forgot password error:', error);
     res.status(500).json({ success: false, message: 'Failed to process request', error: error.message });
   }
 };
 
-// Reset password
+// ✅ UPDATED: Reset Password
 exports.resetPassword = async (req, res) => {
   try {
     const { token, newPassword } = req.body;
-    
-    // In a real app, verify token and update password
+
+    // 1. Find user by valid token and check expiry
+    const user = await new Promise((resolve, reject) => {
+      db.get(
+        'SELECT * FROM users WHERE resetToken = ? AND resetTokenExpiry > ?',
+        [token, Date.now()],
+        (err, row) => {
+          if (err) reject(err);
+          else resolve(row);
+        }
+      );
+    });
+
+    if (!user) {
+      return res.status(400).json({ success: false, message: 'Invalid or expired reset token' });
+    }
+
+    // 2. Hash the new password
+    const hashedPassword = await hashPassword(newPassword);
+
+    // 3. Update user's password and clear the reset token
+    await new Promise((resolve, reject) => {
+      db.run(
+        'UPDATE users SET password = ?, resetToken = NULL, resetTokenExpiry = NULL WHERE id = ?',
+        [hashedPassword, user.id],
+        (err) => err ? reject(err) : resolve()
+      );
+    });
+
     res.json({
       success: true,
       message: 'Password reset successfully'
     });
+
   } catch (error) {
     console.error('Reset password error:', error);
     res.status(500).json({ success: false, message: 'Failed to reset password', error: error.message });
   }
 };
+
+// ✅ NEW: Change password (authenticated user)
+exports.changePassword = async (req, res) => {
+  try {
+    const userId = req.userId;
+    const { currentPassword, newPassword } = req.body;
+
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({
+        success: false,
+        message: 'Current and new password are required',
+      });
+    }
+
+    if (newPassword.length < 6) {
+      return res.status(400).json({
+        success: false,
+        message: 'New password must be at least 6 characters',
+      });
+    }
+
+    // Fetch the user
+    const user = await findUserById(userId);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found',
+      });
+    }
+
+    // Verify current password
+    const isValid = await comparePassword(currentPassword, user.password);
+    if (!isValid) {
+      return res.status(401).json({
+        success: false,
+        message: 'Current password is incorrect',
+      });
+    }
+
+    // Hash and update new password
+    const hashedPassword = await hashPassword(newPassword);
+
+    await new Promise((resolve, reject) => {
+      db.run(
+        'UPDATE users SET password = ? WHERE id = ?',
+        [hashedPassword, userId],
+        (err) => (err ? reject(err) : resolve())
+      );
+    });
+
+    console.log(`✅ Password changed for user ${userId} (${user.email})`);
+
+    res.json({
+      success: true,
+      message: 'Password changed successfully',
+    });
+  } catch (error) {
+    console.error('Change password error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to change password',
+      error: error.message,
+    });
+  }
+};
+
+// ✅ NEW: Update profile (authenticated user)
+exports.updateProfile = async (req, res) => {
+  try {
+    const userId = req.userId;
+    const { firstName, lastName, email, phone } = req.body;
+
+    if (!firstName || !email) {
+      return res.status(400).json({
+        success: false,
+        message: 'First name and email are required',
+      });
+    }
+
+    // Check if email is taken by another user
+    const existing = await findUserByEmail(email);
+    if (existing && existing.id !== userId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email already in use by another account',
+      });
+    }
+
+    await new Promise((resolve, reject) => {
+      db.run(
+        `UPDATE users SET firstName = ?, lastName = ?, email = ?, phone = ? WHERE id = ?`,
+        [firstName, lastName || '', email, phone || '', userId],
+        function (err) {
+          if (err) reject(err);
+          else resolve();
+        }
+      );
+    });
+
+    // Return updated user
+    const updatedUser = await findUserById(userId);
+
+    console.log(`✅ Profile updated for user ${userId}`);
+
+    res.json({
+      success: true,
+      message: 'Profile updated successfully',
+      data: {
+        user: {
+          id: updatedUser.id,
+          firstName: updatedUser.firstName,
+          lastName: updatedUser.lastName,
+          email: updatedUser.email,
+          phone: updatedUser.phone,
+          role: updatedUser.role || 'user',
+        },
+      },
+    });
+  } catch (error) {
+    console.error('Update profile error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to update profile',
+      error: error.message,
+    });
+  }
+};
+
 
 // Logout
 exports.logout = async (req, res) => {

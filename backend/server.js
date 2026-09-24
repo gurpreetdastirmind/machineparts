@@ -3,6 +3,7 @@ const cors = require('cors');
 const dotenv = require('dotenv');
 const helmet = require('helmet');
 
+
 dotenv.config();
 
 const app = express();
@@ -33,6 +34,8 @@ const categoryRoutes = require('./routes/categoryRoutes');
 const cartRoutes = require('./routes/cartRoutes');
 const orderRoutes = require('./routes/orderRoutes');
 const adminRoutes = require('./routes/adminRoutes');
+const contactRoutes = require('./routes/contactRoutes');
+const couponRoutes = require('./routes/couponRoutes');
 
 // Import auth middleware and controllers
 const { auth, adminAuth } = require('./middleware/auth');
@@ -43,6 +46,8 @@ const { db } = require('./config/database');
 app.use('/api/auth', authRoutes);
 app.use('/api/products', productRoutes);
 app.use('/api/categories', categoryRoutes);
+app.use('/api/contact', contactRoutes);
+app.use('/api/coupons', couponRoutes);
 
 // Protected Routes (require auth)
 app.use('/api/cart', cartRoutes);
@@ -53,45 +58,6 @@ app.get('/api/user/profile', auth, authController.getProfile);
 
 // Admin Routes (require auth + admin role)
 app.use('/api/admin', adminRoutes);
-
-// NEW ROUTE: Add New Category API Endpoint (also accessible via adminRoutes)
-app.post('/api/admin/categories', adminAuth, (req, res) => {
-  const { name, slug } = req.body;
-  
-  if (!name) {
-    return res.status(400).json({ success: false, message: 'Category name is required' });
-  }
-
-  const newCat = {
-    id: Date.now(),
-    name,
-    slug: slug || name.toLowerCase().replace(/\s+/g, '-'),
-    productCount: 0,
-    createdAt: new Date().toISOString()
-  };
-  
-  // Insert into SQLite
-  db.run(
-    'INSERT INTO categories (name, slug, productCount, createdAt) VALUES (?, ?, ?, ?)',
-    [newCat.name, newCat.slug, newCat.productCount, newCat.createdAt],
-    function(err) {
-      if (err) {
-        console.error('Error creating category:', err);
-        return res.status(500).json({ 
-          success: false, 
-          message: 'Failed to create category',
-          error: err.message 
-        });
-      }
-      
-      res.status(201).json({ 
-        success: true, 
-        message: 'Category created successfully',
-        data: { ...newCat, id: this.lastID }
-      });
-    }
-  );
-});
 
 // Health check
 app.get('/api/health', (req, res) => {
