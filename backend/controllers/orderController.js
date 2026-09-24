@@ -6,10 +6,10 @@ const Coupon = require('../models/Coupon');
 exports.createOrder = async (req, res) => {
   try {
     const userId = req.userId;
-    const { 
-      items, 
-      totalAmount, 
-      paymentMethod, 
+    const {
+      items,
+      totalAmount,
+      paymentMethod,
       shippingAddress,
       shippingCost,
       tax,
@@ -66,7 +66,7 @@ exports.createOrder = async (req, res) => {
           new Date().toISOString(),
           new Date().toISOString()
         ],
-        function(err) {
+        function (err) {
           if (err) {
             console.error('❌ Database insert error:', err);
             reject(err);
@@ -107,9 +107,9 @@ exports.createOrder = async (req, res) => {
       const itemPrice = item.price || 0;
       const itemQuantity = item.quantity || 1;
       const itemTotal = itemPrice * itemQuantity;
-      
+
       console.log(`📦 Inserting item: ${item.name} x ${itemQuantity} = ₹${itemTotal}`);
-      
+
       let imageUrl = item.imageUrl || '';
       if (!imageUrl && item.productId) {
         try {
@@ -126,7 +126,7 @@ exports.createOrder = async (req, res) => {
           console.error('Error fetching product image:', err);
         }
       }
-      
+
       await new Promise((resolve, reject) => {
         db.run(
           `INSERT INTO order_items (

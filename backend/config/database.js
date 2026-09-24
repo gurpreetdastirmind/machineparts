@@ -10,58 +10,134 @@ const pool = new Pool({
     : false,
 });
 
-pool.on('connect', () => {
-  console.log('✅ Connected to PostgreSQL database');
-});
+pool.on('connect', () => console.log('✅ Connected to PostgreSQL database'));
+pool.on('error', (err) => console.error('PostgreSQL pool error:', err.message));
 
-pool.on('error', (err) => {
-  console.error('PostgreSQL pool error:', err.message);
-});
+// ---------- SQL keywords to skip when quoting ----------
+const SQL_KEYWORDS = new Set([
+  'SELECT', 'FROM', 'WHERE', 'INSERT', 'INTO', 'VALUES', 'UPDATE', 'SET',
+  'DELETE', 'AND', 'OR', 'NOT', 'NULL', 'IS', 'IN', 'AS', 'ON', 'JOIN',
+  'LEFT', 'RIGHT', 'INNER', 'OUTER', 'FULL', 'ORDER', 'BY', 'GROUP', 'HAVING',
+  'LIMIT', 'OFFSET', 'ASC', 'DESC', 'LIKE', 'ILIKE', 'BETWEEN', 'CASE',
+  'WHEN', 'THEN', 'ELSE', 'END', 'DISTINCT', 'COUNT', 'SUM', 'AVG', 'MIN',
+  'MAX', 'COALESCE', 'LOWER', 'UPPER', 'NOW', 'CURRENT_TIMESTAMP', 'TRUE',
+  'FALSE', 'RETURNING', 'PRIMARY', 'KEY', 'REFERENCES', 'DEFAULT', 'UNIQUE',
+  'CREATE', 'TABLE', 'IF', 'EXISTS', 'SERIAL', 'INTEGER', 'TEXT', 'REAL',
+  'BIGINT', 'BOOLEAN', 'PRIMARY', 'NULL', 'CONSTRAINT', 'CASCADE', 'CHECK',
+  'FOREIGN', 'AUTOINCREMENT', 'BEGIN', 'COMMIT', 'ROLLBACK',
+]);
 
-// ---------- Compatibility wrapper (mimics sqlite3 API) ----------
-// SQLite uses ? placeholders; Postgres uses $1, $2...
-// This converts ? to $1, $2 automatically.
-const convertPlaceholders = (sql) => {
+// ---------- Convert ? to $1, $2 and quote camelCase identifiers ----------
+const convertSql = (sql) => {
+  // Step 1: Replace ? with $1, $2, ... (only outside of quotes)
   let i = 0;
-  return sql.replace(/\?/g, () => `$${++i}`);
+  let pgSql = sql.replace(/\?/g, () => `$${++i}`);
+
+  // Step 2: Auto-quote camelCase identifiers (only those outside strings)
+  // We do this by walking the string and rebuilding it.
+  const result = [];
+  let buffer = '';
+  let inString = false;
+  let stringChar = '';
+  let inLineComment = false;
+
+  const flush = () => {
+    if (buffer.length === 0) return;
+    const token = buffer;
+    // Already quoted? Leave as-is
+    if (/^"[^"]*"$/.test(token)) {
+      result.push(token);
+    }
+    // CamelCase identifier? Quote it.
+    else if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(token)) {
+      // Skip pure lowercase (no camelCase) unless it's a keyword
+      const hasUpper = /[A-Z]/.test(token);
+      if (hasUpper && !SQL_KEYWORDS.has(token.toUpperCase())) {
+        result.push(`"${token}"`);
+      } else {
+        result.push(token);
+      }
+    } else {
+      result.push(token);
+    }
+    buffer = '';
+  };
+
+  for (let k = 0; k < pgSql.length; k++) {
+    const ch = pgSql[k];
+    const next = pgSql[k + 1];
+
+    if (inLineComment) {
+      buffer += ch;
+      if (ch === '\n') inLineComment = false;
+      flush();
+      continue;
+    }
+
+    if (!inString && ch === '-' && next === '-') {
+      inLineComment = true;
+      buffer += ch;
+      continue;
+    }
+
+    if (!inString && (ch === '"' || ch === "'")) {
+      flush();
+      inString = true;
+      stringChar = ch;
+      buffer += ch;
+      continue;
+    }
+
+    if (inString) {
+      buffer += ch;
+      if (ch === stringChar) {
+        // escaped quote? '' inside '...'
+        if (pgSql[k + 1] === stringChar) {
+          buffer += pgSql[k + 1];
+          k++;
+        } else {
+          inString = false;
+          flush();
+        }
+      }
+      continue;
+    }
+
+    if (/[A-Za-z0-9_]/.test(ch)) {
+      buffer += ch;
+    } else {
+      flush();
+      result.push(ch);
+    }
+  }
+  flush();
+
+  return result.join('');
 };
 
 const db = {
-  // db.get(sql, params, callback)
   get: (sql, params, callback) => {
-    if (typeof params === 'function') {
-      callback = params;
-      params = [];
-    }
-    const pgSql = convertPlaceholders(sql);
+    if (typeof params === 'function') { callback = params; params = []; }
+    const pgSql = convertSql(sql);
     pool.query(pgSql, params || [])
       .then((res) => callback(null, res.rows[0]))
       .catch((err) => callback(err));
   },
 
-  // db.all(sql, params, callback)
   all: (sql, params, callback) => {
-    if (typeof params === 'function') {
-      callback = params;
-      params = [];
-    }
-    const pgSql = convertPlaceholders(sql);
+    if (typeof params === 'function') { callback = params; params = []; }
+    const pgSql = convertSql(sql);
     pool.query(pgSql, params || [])
       .then((res) => callback(null, res.rows))
       .catch((err) => callback(err));
   },
 
-  // db.run(sql, params, callback)
   run: function (sql, params, callback) {
-    if (typeof params === 'function') {
-      callback = params;
-      params = [];
-    }
+    if (typeof params === 'function') { callback = params; params = []; }
 
-    // Handle INSERT: append RETURNING id so we can mimic lastID
-    let pgSql = convertPlaceholders(sql);
+    let pgSql = convertSql(sql);
     const isInsert = /^\s*INSERT\s+/i.test(sql);
-    if (isInsert && !/RETURNING/i.test(sql)) {
+    if (isInsert && !/RETURNING/i.test(pgSql)) {
       pgSql += ' RETURNING id';
     }
 
@@ -77,12 +153,8 @@ const db = {
       });
   },
 
-  // db.serialize (no-op for Postgres — used to queue operations in sqlite)
-  serialize: (fn) => {
-    if (fn) fn();
-  },
+  serialize: (fn) => { if (fn) fn(); },
 
-  // db.prepare — minimal shim
   prepare: (sql) => ({
     run: (params, cb) => db.run(sql, params, cb),
     finalize: () => {},
@@ -95,258 +167,108 @@ const db = {
 // ============================================================
 // HELPER FUNCTIONS
 // ============================================================
+const findUserByEmail = (email) => new Promise((resolve, reject) => {
+  db.get('SELECT * FROM users WHERE email = $1', [email], (err, row) => err ? reject(err) : resolve(row));
+});
 
-const findUserByEmail = (email) => {
-  return new Promise((resolve, reject) => {
-    db.get('SELECT * FROM users WHERE email = $1', [email], (err, row) => {
-      if (err) reject(err);
-      else resolve(row);
+const findUserById = (id) => new Promise((resolve, reject) => {
+  db.get('SELECT * FROM users WHERE id = $1', [id], (err, row) => err ? reject(err) : resolve(row));
+});
+
+const findProductById = (id) => new Promise((resolve, reject) => {
+  db.get('SELECT * FROM products WHERE id = $1', [id], (err, row) => {
+    if (err) return reject(err);
+    if (!row) return resolve(row);
+    db.all('SELECT "imageUrl" FROM product_images WHERE "productId" = $1 ORDER BY "sortOrder" ASC, id ASC', [id], (imgErr, imgRows) => {
+      if (imgErr) {
+        row.images = row.imageUrl ? [row.imageUrl] : [];
+      } else {
+        const fromTable = (imgRows || []).map((r) => r.imageUrl);
+        row.images = fromTable.length > 0 ? fromTable : (row.imageUrl ? [row.imageUrl] : []);
+      }
+      resolve(row);
     });
   });
-};
+});
 
-const findUserById = (id) => {
-  return new Promise((resolve, reject) => {
-    db.get('SELECT * FROM users WHERE id = $1', [id], (err, row) => {
-      if (err) reject(err);
-      else resolve(row);
-    });
-  });
-};
+const findCategoryById = (id) => new Promise((resolve, reject) => {
+  db.get('SELECT * FROM categories WHERE id = $1', [id], (err, row) => err ? reject(err) : resolve(row));
+});
 
-const findProductById = (id) => {
-  return new Promise((resolve, reject) => {
-    db.get('SELECT * FROM products WHERE id = $1', [id], (err, row) => {
-      if (err) return reject(err);
-      if (!row) return resolve(row);
+const getCartItems = (userId) => new Promise((resolve, reject) => {
+  db.all('SELECT * FROM carts WHERE "userId" = $1', [userId], (err, rows) => err ? reject(err) : resolve(rows));
+});
 
-      db.all(
-        'SELECT "imageUrl" FROM product_images WHERE "productId" = $1 ORDER BY "sortOrder" ASC, id ASC',
-        [id],
-        (imgErr, imgRows) => {
-          if (imgErr) {
-            console.error('Error fetching product images:', imgErr);
-            row.images = row.imageUrl ? [row.imageUrl] : [];
-          } else {
-            const fromTable = (imgRows || []).map((r) => r.imageUrl);
-            row.images = fromTable.length > 0
-              ? fromTable
-              : (row.imageUrl ? [row.imageUrl] : []);
-          }
-          resolve(row);
-        }
-      );
-    });
-  });
-};
+const getOrders = (userId) => new Promise((resolve, reject) => {
+  db.all('SELECT * FROM orders WHERE "userId" = $1', [userId], (err, rows) => err ? reject(err) : resolve(rows));
+});
 
-const findCategoryById = (id) => {
-  return new Promise((resolve, reject) => {
-    db.get('SELECT * FROM categories WHERE id = $1', [id], (err, row) => {
-      if (err) reject(err);
-      else resolve(row);
-    });
-  });
-};
-
-const getCartItems = (userId) => {
-  return new Promise((resolve, reject) => {
-    db.all('SELECT * FROM carts WHERE "userId" = $1', [userId], (err, rows) => {
-      if (err) reject(err);
-      else resolve(rows);
-    });
-  });
-};
-
-const getOrders = (userId) => {
-  return new Promise((resolve, reject) => {
-    db.all('SELECT * FROM orders WHERE "userId" = $1', [userId], (err, rows) => {
-      if (err) reject(err);
-      else resolve(rows);
-    });
-  });
-};
-
-const hashPassword = async (password) => {
-  return await bcrypt.hash(password, 10);
-};
-
-const comparePassword = async (plainPassword, hashedPassword) => {
-  return await bcrypt.compare(plainPassword, hashedPassword);
-};
+const hashPassword = async (password) => bcrypt.hash(password, 10);
+const comparePassword = async (plainPassword, hashedPassword) => bcrypt.compare(plainPassword, hashedPassword);
 
 // ============================================================
-// TABLE CREATION (Postgres-compatible schema)
+// TABLE CREATION
 // ============================================================
 const initDB = async () => {
   try {
-    // USERS
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS users (
-        id SERIAL PRIMARY KEY,
-        "firstName" TEXT,
-        "lastName" TEXT,
-        email TEXT UNIQUE,
-        phone TEXT,
-        role TEXT DEFAULT 'user',
-        password TEXT,
-        "resetToken" TEXT,
-        "resetTokenExpiry" BIGINT,
-        "createdAt" TEXT
-      )
-    `);
+    const createStatements = [
+      `CREATE TABLE IF NOT EXISTS users (
+        id SERIAL PRIMARY KEY, "firstName" TEXT, "lastName" TEXT, email TEXT UNIQUE,
+        phone TEXT, role TEXT DEFAULT 'user', password TEXT, "resetToken" TEXT,
+        "resetTokenExpiry" BIGINT, "createdAt" TEXT)`,
+      `CREATE TABLE IF NOT EXISTS categories (
+        id SERIAL PRIMARY KEY, name TEXT, slug TEXT,
+        "productCount" INTEGER DEFAULT 0, "createdAt" TEXT)`,
+      `CREATE TABLE IF NOT EXISTS products (
+        id SERIAL PRIMARY KEY, name TEXT, sku TEXT, description TEXT, price REAL,
+        "discountedPrice" REAL, stock INTEGER, category TEXT, "categoryId" INTEGER,
+        brand TEXT, "imageUrl" TEXT, images TEXT DEFAULT '[]', specifications TEXT,
+        rating REAL DEFAULT 0, "reviewCount" INTEGER DEFAULT 0,
+        "isBestSeller" INTEGER DEFAULT 0, "isNewArrival" INTEGER DEFAULT 0,
+        "isHotDeal" INTEGER DEFAULT 0, "isFeatured" INTEGER DEFAULT 0,
+        "isBundle" INTEGER DEFAULT 0, "isMostPopular" INTEGER DEFAULT 0,
+        "createdAt" TEXT, "updatedAt" TEXT)`,
+      `CREATE TABLE IF NOT EXISTS product_images (
+        id SERIAL PRIMARY KEY, "productId" INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+        "imageUrl" TEXT NOT NULL, "sortOrder" INTEGER DEFAULT 0, "createdAt" TEXT)`,
+      `CREATE TABLE IF NOT EXISTS carts (
+        id SERIAL PRIMARY KEY, "userId" INTEGER, "productId" INTEGER, quantity INTEGER,
+        price REAL, "createdAt" TEXT, "updatedAt" TEXT)`,
+      `CREATE TABLE IF NOT EXISTS orders (
+        id SERIAL PRIMARY KEY, "userId" INTEGER, "orderNumber" TEXT, "totalAmount" REAL,
+        status TEXT DEFAULT 'Pending', "paymentMethod" TEXT, "shippingAddress" TEXT,
+        "createdAt" TEXT, "updatedAt" TEXT)`,
+      `CREATE TABLE IF NOT EXISTS order_items (
+        id SERIAL PRIMARY KEY, "orderId" INTEGER REFERENCES orders(id), "productId" INTEGER,
+        "productName" TEXT, quantity INTEGER, price REAL, total REAL,
+        "imageUrl" TEXT, "createdAt" TEXT)`,
+      `CREATE TABLE IF NOT EXISTS reviews (
+        id SERIAL PRIMARY KEY, "productId" INTEGER REFERENCES products(id),
+        "userId" INTEGER REFERENCES users(id), "userName" TEXT, rating INTEGER,
+        title TEXT, comment TEXT, "helpfulCount" INTEGER DEFAULT 0, "createdAt" TEXT)`,
+      `CREATE TABLE IF NOT EXISTS coupons (
+        id SERIAL PRIMARY KEY, code TEXT UNIQUE NOT NULL, description TEXT,
+        "discountType" TEXT DEFAULT 'percentage', "discountValue" REAL DEFAULT 0,
+        "minOrderAmount" REAL DEFAULT 0, "maxDiscount" REAL DEFAULT 0,
+        "usageLimit" INTEGER DEFAULT 0, "usedCount" INTEGER DEFAULT 0,
+        "validFrom" TEXT, "validUntil" TEXT, "isActive" INTEGER DEFAULT 1,
+        "showOnHome" INTEGER DEFAULT 0, "createdAt" TEXT, "updatedAt" TEXT)`,
+      `CREATE TABLE IF NOT EXISTS coupon_usage (
+        id SERIAL PRIMARY KEY, "couponId" INTEGER NOT NULL REFERENCES coupons(id),
+        "userId" INTEGER NOT NULL REFERENCES users(id), "orderId" INTEGER, code TEXT,
+        "usedAt" TEXT, UNIQUE("couponId", "userId"))`,
+    ];
 
-    // CATEGORIES
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS categories (
-        id SERIAL PRIMARY KEY,
-        name TEXT,
-        slug TEXT,
-        "productCount" INTEGER DEFAULT 0,
-        "createdAt" TEXT
-      )
-    `);
+    for (const stmt of createStatements) {
+      await pool.query(stmt);
+    }
 
-    // PRODUCTS
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS products (
-        id SERIAL PRIMARY KEY,
-        name TEXT,
-        sku TEXT,
-        description TEXT,
-        price REAL,
-        "discountedPrice" REAL,
-        stock INTEGER,
-        category TEXT,
-        "categoryId" INTEGER,
-        brand TEXT,
-        "imageUrl" TEXT,
-        images TEXT DEFAULT '[]',
-        specifications TEXT,
-        rating REAL DEFAULT 0,
-        "reviewCount" INTEGER DEFAULT 0,
-        "isBestSeller" INTEGER DEFAULT 0,
-        "isNewArrival" INTEGER DEFAULT 0,
-        "isHotDeal" INTEGER DEFAULT 0,
-        "isFeatured" INTEGER DEFAULT 0,
-        "isBundle" INTEGER DEFAULT 0,
-        "isMostPopular" INTEGER DEFAULT 0,
-        "createdAt" TEXT,
-        "updatedAt" TEXT
-      )
-    `);
-
-    // PRODUCT IMAGES
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS product_images (
-        id SERIAL PRIMARY KEY,
-        "productId" INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
-        "imageUrl" TEXT NOT NULL,
-        "sortOrder" INTEGER DEFAULT 0,
-        "createdAt" TEXT
-      )
-    `);
-
-    // CARTS
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS carts (
-        id SERIAL PRIMARY KEY,
-        "userId" INTEGER,
-        "productId" INTEGER,
-        quantity INTEGER,
-        price REAL,
-        "createdAt" TEXT,
-        "updatedAt" TEXT
-      )
-    `);
-
-    // ORDERS
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS orders (
-        id SERIAL PRIMARY KEY,
-        "userId" INTEGER,
-        "orderNumber" TEXT,
-        "totalAmount" REAL,
-        status TEXT DEFAULT 'Pending',
-        "paymentMethod" TEXT,
-        "shippingAddress" TEXT,
-        "createdAt" TEXT,
-        "updatedAt" TEXT
-      )
-    `);
-
-    // ORDER ITEMS
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS order_items (
-        id SERIAL PRIMARY KEY,
-        "orderId" INTEGER REFERENCES orders(id),
-        "productId" INTEGER,
-        "productName" TEXT,
-        quantity INTEGER,
-        price REAL,
-        total REAL,
-        "imageUrl" TEXT,
-        "createdAt" TEXT
-      )
-    `);
-
-    // REVIEWS
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS reviews (
-        id SERIAL PRIMARY KEY,
-        "productId" INTEGER REFERENCES products(id),
-        "userId" INTEGER REFERENCES users(id),
-        "userName" TEXT,
-        rating INTEGER,
-        title TEXT,
-        comment TEXT,
-        "helpfulCount" INTEGER DEFAULT 0,
-        "createdAt" TEXT
-      )
-    `);
-
-    // COUPONS
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS coupons (
-        id SERIAL PRIMARY KEY,
-        code TEXT UNIQUE NOT NULL,
-        description TEXT,
-        "discountType" TEXT DEFAULT 'percentage',
-        "discountValue" REAL DEFAULT 0,
-        "minOrderAmount" REAL DEFAULT 0,
-        "maxDiscount" REAL DEFAULT 0,
-        "usageLimit" INTEGER DEFAULT 0,
-        "usedCount" INTEGER DEFAULT 0,
-        "validFrom" TEXT,
-        "validUntil" TEXT,
-        "isActive" INTEGER DEFAULT 1,
-        "showOnHome" INTEGER DEFAULT 0,
-        "createdAt" TEXT,
-        "updatedAt" TEXT
-      )
-    `);
-
-    // COUPON USAGE
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS coupon_usage (
-        id SERIAL PRIMARY KEY,
-        "couponId" INTEGER NOT NULL REFERENCES coupons(id),
-        "userId" INTEGER NOT NULL REFERENCES users(id),
-        "orderId" INTEGER,
-        code TEXT,
-        "usedAt" TEXT,
-        UNIQUE("couponId", "userId")
-      )
-    `);
-
-    // ---------- SEED ADMIN ----------
-    const adminCheck = await pool.query('SELECT * FROM users WHERE email = $1', ['admin@example.com']);
+    // Seed admin
     const hashedPassword = await hashPassword('admin123');
-
-    if (adminCheck.rows.length === 0) {
+    const adminRes = await pool.query('SELECT * FROM users WHERE email = $1', ['admin@example.com']);
+    if (adminRes.rows.length === 0) {
       await pool.query(
-        `INSERT INTO users ("firstName", "lastName", email, phone, role, password, "createdAt")
-         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        `INSERT INTO users ("firstName", "lastName", email, phone, role, password, "createdAt") VALUES ($1,$2,$3,$4,$5,$6,$7)`,
         ['Admin', 'User', 'admin@example.com', '9876543211', 'admin', hashedPassword, new Date().toISOString()]
       );
       console.log('✅ Admin user created');
@@ -355,29 +277,25 @@ const initDB = async () => {
       console.log('✅ Admin password updated');
     }
 
-    // ---------- SEED CATEGORIES ----------
-    const catCheck = await pool.query('SELECT COUNT(*) as count FROM categories');
-    if (parseInt(catCheck.rows[0].count) === 0) {
+    // Seed categories
+    const catCount = await pool.query('SELECT COUNT(*)::int as count FROM categories');
+    if (catCount.rows[0].count === 0) {
       const cats = [
-        ['Sewing Parts', 'sewing-parts'],
-        ['Cutting', 'cutting'],
-        ['Fusing', 'fusing'],
-        ['Steam Iron', 'steam-iron'],
-        ['Household', 'household'],
-        ['Needles', 'needles'],
+        ['Sewing Parts', 'sewing-parts'], ['Cutting', 'cutting'], ['Fusing', 'fusing'],
+        ['Steam Iron', 'steam-iron'], ['Household', 'household'], ['Needles', 'needles'],
       ];
       for (const [name, slug] of cats) {
         await pool.query(
-          `INSERT INTO categories (name, slug, "productCount", "createdAt") VALUES ($1, $2, 0, $3)`,
+          `INSERT INTO categories (name, slug, "productCount", "createdAt") VALUES ($1,$2,0,$3)`,
           [name, slug, new Date().toISOString()]
         );
       }
       console.log('✅ Categories seeded');
     }
 
-    // ---------- SEED COUPONS ----------
-    const couponCheck = await pool.query('SELECT COUNT(*) as count FROM coupons');
-    if (parseInt(couponCheck.rows[0].count) === 0) {
+    // Seed coupons
+    const couponCount = await pool.query('SELECT COUNT(*)::int as count FROM coupons');
+    if (couponCount.rows[0].count === 0) {
       const coupons = [
         ['WELCOME10', 'Get 10% off on your first order', 'percentage', 10, 500, 200, 100, 1, 1],
         ['SAVE20', 'Save 20% on orders above ₹1000', 'percentage', 20, 1000, 500, 50, 1, 1],
@@ -412,14 +330,6 @@ const initDB = async () => {
 initDB();
 
 module.exports = {
-  db,
-  pool,
-  findUserByEmail,
-  findUserById,
-  findProductById,
-  findCategoryById,
-  getCartItems,
-  getOrders,
-  hashPassword,
-  comparePassword,
+  db, pool, findUserByEmail, findUserById, findProductById,
+  findCategoryById, getCartItems, getOrders, hashPassword, comparePassword,
 };
